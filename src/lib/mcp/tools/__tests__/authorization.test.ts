@@ -26,6 +26,8 @@ import { reviewArtifact } from '../review-artifact';
 import { updateArtifact } from '../update-artifact';
 import { updateCriterionStatus } from '../update-criterion-status';
 import { getSuccessMetrics } from '../get-success-metrics';
+import { adjustConfidence } from '../adjust-confidence';
+import { setImpactOverride } from '../set-impact-override';
 
 /**
  * The gate resolves DB-configured permission overrides (lib/permissions-server),
@@ -325,5 +327,71 @@ describe('get-success-metrics visibility', () => {
 
         expect(result.config).toBeNull();
         expect(result.note).toBeUndefined();
+    });
+});
+
+describe('roadmap writes', () => {
+    const CONFIDENCE_ARGS = {
+        ahaKey: 'CC-EPIC-1',
+        snapshotDate: '2026-09-01',
+        newAdjustment: 5,
+    };
+    const OVERRIDE_ARGS = {
+        ahaKey: 'CC-EPIC-1',
+        weekStart: '2026-09-01',
+        originalImpact: 'low',
+        overrideImpact: 'high',
+    };
+
+    it('refuses a confidence adjustment for a role without the capability', async () => {
+        const result = await adjustConfidence(NO_DB, CONFIDENCE_ARGS, actor(['ENG']));
+
+        expect(result).toEqual({
+            error: 'You do not have permission to adjust confidence ratings.',
+        });
+    });
+
+    it('refuses an impact override for a role without the capability', async () => {
+        const result = await setImpactOverride(NO_DB, OVERRIDE_ARGS, actor(['ENG']));
+
+        expect(result).toEqual({
+            error: 'You do not have permission to override movement impact.',
+        });
+    });
+
+    it('refuses the legacy shared-key actor, which carries no roles', async () => {
+        await expect(adjustConfidence(NO_DB, CONFIDENCE_ARGS, actor([]))).resolves.toMatchObject({
+            error: expect.stringContaining('permission'),
+        });
+        await expect(setImpactOverride(NO_DB, OVERRIDE_ARGS, actor([]))).resolves.toMatchObject({
+            error: expect.stringContaining('permission'),
+        });
+    });
+
+    it('rejects an out-of-range adjustment before checking anything else', async () => {
+        // Schema first: a 500-point "adjustment" is not a permissions question.
+        const result = await adjustConfidence(NO_DB, { ...CONFIDENCE_ARGS, newAdjustment: 500 }, actor(['PM']));
+
+        expect(result).toMatchObject({ error: expect.stringContaining('Invalid input') });
+    });
+
+    it('lets a PM through to the database', async () => {
+        let reached = false;
+        const supabase = {
+            from: () => {
+                reached = true;
+                return {
+                    select: () => ({
+                        eq: () => ({
+                            eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+                        }),
+                    }),
+                };
+            },
+        } as unknown as SupabaseClient;
+
+        await adjustConfidence(supabase, CONFIDENCE_ARGS, actor(['PM']));
+
+        expect(reached).toBe(true);
     });
 });

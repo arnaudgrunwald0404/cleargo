@@ -43,6 +43,13 @@ import { getSuccessMetrics, InputSchema as getSuccessMetricsSchema } from './get
 import { getSuccessScorecards, InputSchema as getSuccessScorecardsSchema } from './get-success-scorecards';
 import { listRetros, InputSchema as listRetrosSchema } from './list-retros';
 import { getHeartMetrics, InputSchema as getHeartMetricsSchema } from './get-heart-metrics';
+import { listRoadmapSnapshots } from './list-roadmap-snapshots';
+import { getRoadmapMovements, InputSchema as getRoadmapMovementsSchema } from './get-roadmap-movements';
+import { getRoadmapDeliveryMetrics, InputSchema as getRoadmapDeliveryMetricsSchema } from './get-roadmap-delivery-metrics';
+import { getStrategicItems, InputSchema as getStrategicItemsSchema } from './get-strategic-items';
+import { getConfidenceRating, InputSchema as getConfidenceRatingSchema } from './get-confidence-rating';
+import { adjustConfidence, InputSchema as adjustConfidenceSchema } from './adjust-confidence';
+import { setImpactOverride, InputSchema as setImpactOverrideSchema } from './set-impact-override';
 
 type ToolHandler = (
     supabase: SupabaseClient,
@@ -197,6 +204,42 @@ const TOOLS: ToolDefinition[] = [
         handler: listRetros,
     },
 
+    {
+        name: 'list-roadmap-snapshots',
+        description: 'Which weekly roadmap snapshot dates exist. Other roadmap tools take an asOfDate; get a valid one here rather than guessing, since an unknown date returns nothing and looks like "nothing moved".',
+        inputSchema: {},
+        readOnly: true,
+        handler: listRoadmapSnapshots,
+    },
+    {
+        name: 'get-roadmap-movements',
+        description: 'What moved on the roadmap over a horizon: weekly, quarterly, year to date, the full year, or categorised by PM-assessed impact.',
+        inputSchema: getRoadmapMovementsSchema.shape,
+        readOnly: true,
+        handler: getRoadmapMovements,
+    },
+    {
+        name: 'get-roadmap-delivery-metrics',
+        description: 'Delivery metrics for a release, or across the priority goals.',
+        inputSchema: getRoadmapDeliveryMetricsSchema.shape,
+        readOnly: true,
+        handler: getRoadmapDeliveryMetrics,
+    },
+    {
+        name: 'get-strategic-items',
+        description: 'Strategic roadmap items for a category (csm-priority, with-goals, combined) and period (last-release, quarter, year).',
+        inputSchema: getStrategicItemsSchema.shape,
+        readOnly: true,
+        handler: getStrategicItems,
+    },
+    {
+        name: 'get-confidence-rating',
+        description: 'Confidence history for one Aha epic: the calculated score, any PM adjustment, and the final result, newest snapshot first.',
+        inputSchema: getConfidenceRatingSchema.shape,
+        readOnly: true,
+        handler: getConfidenceRating,
+    },
+
     // ── Write ───────────────────────────────────────────────────────────────
     {
         name: 'update-artifact',
@@ -246,6 +289,20 @@ const TOOLS: ToolDefinition[] = [
         inputSchema: updateCriterionStatusSchema.shape,
         readOnly: false,
         handler: updateCriterionStatus,
+    },
+    {
+        name: 'adjust-confidence',
+        description: 'Apply a PM adjustment (-20 to +20 points) to an epic confidence rating for a snapshot, with a note. Recalculates the final score and records the change.',
+        inputSchema: adjustConfidenceSchema.shape,
+        readOnly: false,
+        handler: adjustConfidence,
+    },
+    {
+        name: 'set-impact-override',
+        description: 'Record that a roadmap movement mattered more or less than the automatic assessment said, for a given week.',
+        inputSchema: setImpactOverrideSchema.shape,
+        readOnly: false,
+        handler: setImpactOverride,
     },
 ];
 
