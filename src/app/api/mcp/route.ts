@@ -87,8 +87,16 @@ export async function POST(req: Request) {
         const supabase = createAdminSupabase();
         const mcpServer = createClearGoMcpServer(supabase, auth);
 
+        // JSON response mode, not SSE. In SSE mode handleRequest returns as soon
+        // as the stream exists and the JSON-RPC result is written into it later,
+        // so the mcpServer.close() below races that write and wins — the client
+        // gets a 200 text/event-stream with an empty body, and every handshake
+        // fails with no error to show. In JSON mode handleRequest resolves only
+        // once every response is ready, which is also the right shape for a
+        // stateless serverless function that cannot hold a stream open anyway.
         const transport = new WebStandardStreamableHTTPServerTransport({
             sessionIdGenerator: undefined,
+            enableJsonResponse: true,
         });
 
         await mcpServer.connect(transport);
