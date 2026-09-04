@@ -201,6 +201,7 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [scenario, setScenario] = useState<Scenario>('base');
+  const [periodView, setPeriodView] = useState<'year' | 'quarter'>('year');
   const [rawMarkdown, setRawMarkdown] = useState<{ raw_markdown_forecast: string | null; raw_markdown_assumptions: string | null } | null>(null);
   const [rawLoading, setRawLoading] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
@@ -810,20 +811,31 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
         </Group>
       </Group>
 
-      <SegmentedControl
-        value={scenario}
-        onChange={(v) => setScenario(v as Scenario)}
-        data={[
-          { label: 'Bear', value: 'bear' },
-          { label: 'Base', value: 'base' },
-          { label: 'Bull', value: 'bull' },
-        ]}
-        style={{ maxWidth: 300 }}
-      />
+      <Group justify="space-between" wrap="wrap">
+        <SegmentedControl
+          value={scenario}
+          onChange={(v) => setScenario(v as Scenario)}
+          data={[
+            { label: 'Bear', value: 'bear' },
+            { label: 'Base', value: 'base' },
+            { label: 'Bull', value: 'bull' },
+          ]}
+          style={{ maxWidth: 300 }}
+        />
+        <SegmentedControl
+          value={periodView}
+          onChange={(v) => setPeriodView(v as 'year' | 'quarter')}
+          data={[
+            { label: 'Yearly', value: 'year' },
+            { label: 'Quarterly', value: 'quarter' },
+          ]}
+          style={{ maxWidth: 220 }}
+        />
+      </Group>
 
-      {renderPeriodTable('New Bookings by Year', yearRows, 'No annual figures for this scenario.')}
-      {(quarterRows.length > 0 || editMode) &&
-        renderPeriodTable('Quarterly Detail', quarterRows, 'No quarterly figures for this scenario.')}
+      {periodView === 'year'
+        ? renderPeriodTable('New Bookings by Year', yearRows, 'No annual figures for this scenario.')
+        : renderPeriodTable('Quarterly Detail', quarterRows, 'No quarterly figures for this scenario.')}
 
       <Paper withBorder p="md">
         <Title order={5} mb="sm">Assumptions</Title>
