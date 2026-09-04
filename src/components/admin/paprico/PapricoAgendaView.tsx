@@ -18,7 +18,9 @@ import {
 } from "@mantine/core";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canRolesPerform } from "@/lib/permissions";
-import { formatDateOnlyForDisplay } from "@/lib/date-utils";
+import { formatDateOnlyForDisplay, getCalendarDateStringInTimeZone } from "@/lib/date-utils";
+import { PAPRICO_TIMEZONE } from "@/lib/paprico/agenda";
+import type { NextCalendarEvent } from "@/lib/google/calendar";
 import type {
     AgendaItem,
     OpenCommitment,
@@ -67,6 +69,7 @@ export default function PapricoAgendaView() {
     const [newChair, setNewChair] = useState("");
     const [newLength, setNewLength] = useState<number | string>(60);
     const [creating, setCreating] = useState(false);
+    const [calendarSuggestion, setCalendarSuggestion] = useState<NextCalendarEvent | null>(null);
 
     const [standingOpen, setStandingOpen] = useState(false);
     const [standingTitle, setStandingTitle] = useState("");
@@ -124,6 +127,49 @@ export default function PapricoAgendaView() {
             }
         })();
     }, [loadMeetings, loadAgenda]);
+
+    // Calendar suggestion for the New Meeting form — a pre-fill, not automation.
+    // Silently absent when Google isn't connected or no PaPriCo event is found.
+    useEffect(() => {
+        if (!createOpen) return;
+        let stale = false;
+        (async () => {
+            try {
+                const res = await fetch("/api/paprico/next-calendar-meeting");
+                if (!res.ok) return;
+                const body = await res.json();
+                if (!stale && body.found) setCalendarSuggestion(body.event as NextCalendarEvent);
+            } catch {
+                // No suggestion is fine; the form works without one.
+            }
+        })();
+        return () => {
+            stale = true;
+        };
+    }, [createOpen]);
+
+    const applyCalendarSuggestion = () => {
+        if (!calendarSuggestion) return;
+        const date = calendarSuggestion.all_day
+            ? calendarSuggestion.start
+            : getCalendarDateStringInTimeZone(PAPRICO_TIMEZONE, new Date(calendarSuggestion.start));
+        setNewDate(date);
+        if (calendarSuggestion.duration_minutes) setNewLength(calendarSuggestion.duration_minutes);
+    };
+
+    const calendarSuggestionLabel = (() => {
+        if (!calendarSuggestion) return null;
+        if (calendarSuggestion.all_day) return formatDateOnlyForDisplay(calendarSuggestion.start);
+        return new Date(calendarSuggestion.start).toLocaleString("en-US", {
+            timeZone: PAPRICO_TIMEZONE,
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            timeZoneName: "short",
+        });
+    })();
 
     const refresh = useCallback(() => {
         if (selectedMeetingId) void loadAgenda(selectedMeetingId);
@@ -619,6 +665,17 @@ export default function PapricoAgendaView() {
             {/* Create meeting */}
             <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title="New PaPriCo meeting">
                 <Stack gap="sm">
+                    {calendarSuggestion && (
+                        <div className="text-sm bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 flex flex-wrap items-center gap-2">
+                            <span>
+                                Next on your calendar: <b>{calendarSuggestionLabel}</b>
+                                {calendarSuggestion.duration_minutes ? ` (${calendarSuggestion.duration_minutes} min)` : ""}
+                            </span>
+                            <Button size="compact-xs" variant="light" onClick={applyCalendarSuggestion}>
+                                Use this date
+                            </Button>
+                        </div>
+                    )}
                     <TextInput
                         label="Meeting date"
                         type="date"

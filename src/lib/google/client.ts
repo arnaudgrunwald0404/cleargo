@@ -26,7 +26,7 @@ async function sleep(ms: number): Promise<void> {
  * getGoogleAccessToken(), which is cached — so a retry after a 401 that was
  * caused by expiry picks up a fresh token for free.
  */
-async function googleFetch(
+export async function googleFetch(
     url: string,
     init: RequestInit & { body?: string } = {}
 ): Promise<unknown> {
