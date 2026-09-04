@@ -22,6 +22,7 @@ IconSettings,
   IconListCheck,
   IconRoute,
   IconChartLine,
+  IconGavel,
 } from '@tabler/icons-react';
 import { UserAvatar } from './UserAvatar';
 import { EpicSearch } from './EpicSearch';
@@ -171,6 +172,7 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
   const commonTabs: NavItem[] = [
     ...(hasAnalyticsAccess ? [{ link: '/analytics', label: 'Analytics', icon: IconChartBar }] : []),
     { link: '/portfolio/forecasts', label: 'Forecasts', icon: IconChartLine },
+    { link: '/paprico', label: 'PaPriCo Prep', icon: IconGavel },
     { link: AHA_IDEAS_PORTAL_SSO_PATH, label: 'Feedback', icon: IconMessageReport, openInNewTab: true },
   ];
 

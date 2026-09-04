@@ -1,9 +1,11 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { use } from "react";
-import PapricoMeetingMode from "@/components/admin/paprico/PapricoMeetingMode";
-
-export default function PapricoMeetingModePage({ params }: { params: Promise<{ id: string }> }) {
-    const { id } = use(params);
-    return <PapricoMeetingMode meetingId={id} />;
+// PaPriCo moved out of Admin Settings to the main nav (Tools → PaPriCo Prep).
+export default async function LegacyPapricoMeetingModePage({
+    params,
+}: {
+    params: Promise<{ id: string }>;
+}) {
+    const { id } = await params;
+    redirect(`/paprico/meeting/${id}`);
 }

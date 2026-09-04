@@ -32,6 +32,11 @@ const USERINFO_ENDPOINT = 'https://www.googleapis.com/oauth2/v2/userinfo';
 export const OAUTH_SCOPES = [
     'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/documents',
+    // Read-only calendar access: PaPriCo Prep reads the next committee meeting
+    // date from the connected account's calendar. Added after the original
+    // Drive/Docs connection, so an existing connection must be re-authorised
+    // once to carry this scope (include_granted_scopes keeps the old grants).
+    'https://www.googleapis.com/auth/calendar.readonly',
     'https://www.googleapis.com/auth/userinfo.email',
 ] as const;
 
