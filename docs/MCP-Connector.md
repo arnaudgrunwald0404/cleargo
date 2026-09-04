@@ -87,7 +87,7 @@ Claude Desktop
 - **Resource server:** `src/app/api/mcp/route.ts`
 - **Authorization server:** `src/app/api/oauth/{authorize,token,register,revoke}`
 - **Shared logic:** `src/lib/oauth/`
-- **Tools:** `src/lib/mcp/tools/` (registry table in `index.ts`), plus five team-management tools registered inline by `src/lib/mcp/server.ts`
+- **Tools:** `src/lib/mcp/tools/` — one registry table in `index.ts` holds all 46, team-management included. **This table is shared with the in-app ClearGO assistant** (`src/lib/ai/mcpTools.ts`), so a tool registered anywhere else is reachable from Claude Desktop and not from the assistant. Add tools to the table.
 - **Capability checks:** `actorCan` in `src/lib/permissions-server.ts`, which resolves the DB overrides an admin sets in Settings. Do not use `canRolesPerform` here: it closes over `DEFAULT_RULES` and cannot see them.
 - **Caller identity:** `src/lib/mcp/actor.ts` maps the OAuth subject to an `app_user` row. Writes need it — attribution columns are uuid FKs — and roles come from that row rather than the access token, which lives an hour.
 
