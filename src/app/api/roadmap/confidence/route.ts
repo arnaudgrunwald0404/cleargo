@@ -15,7 +15,7 @@ import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
-import { percentageToLevel } from '@/lib/roadmap/confidenceCalculator';
+import { adjustConfidenceRating } from '@/lib/roadmap/confidenceWrite';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,49 +74,25 @@ async function postHandler(req: NextRequest): Promise<NextResponse> {
   }
   const { ahaKey, snapshotDate, newAdjustment, note } = parsed.data;
 
-  const { data: existing, error: readErr } = await supabase
-    .from('confidence_rating')
-    .select('id, pm_adjustment, calculated_percentage, final_percentage')
-    .eq('aha_key', ahaKey)
-    .eq('snapshot_date', snapshotDate)
-    .single();
-  if (readErr) return NextResponse.json({ error: readErr.message }, { status: 404 });
-  if (!existing) return NextResponse.json({ error: 'No rating row for that snapshot' }, { status: 404 });
-
-  const calculated = (existing as { calculated_percentage: number }).calculated_percentage;
-  const previousAdj = (existing as { pm_adjustment: number }).pm_adjustment ?? 0;
-  const previousFinal = (existing as { final_percentage: number }).final_percentage ?? calculated;
-  const newFinal = Math.max(0, Math.min(100, calculated + newAdjustment));
-  const newLevel = percentageToLevel(newFinal);
-
-  const { error: updErr } = await supabase
-    .from('confidence_rating')
-    .update({
-      pm_adjustment: newAdjustment,
-      final_percentage: newFinal,
-      final_confidence: newLevel,
-      author_email: email,
-    })
-    .eq('id', (existing as { id: string }).id);
-  if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
-
-  const { error: histErr } = await supabase.from('confidence_adjustment_history').insert({
-    aha_key: ahaKey,
-    snapshot_date: snapshotDate,
-    previous_adjustment: previousAdj,
-    new_adjustment: newAdjustment,
-    adjustment_delta: newAdjustment - previousAdj,
-    previous_final_percentage: previousFinal,
-    new_final_percentage: newFinal,
-    adjustment_note: note ?? null,
-    author_email: email,
+  const result = await adjustConfidenceRating(supabase, {
+    ahaKey,
+    snapshotDate,
+    newAdjustment,
+    note,
+    authorEmail: email,
   });
-  if (histErr) return NextResponse.json({ error: histErr.message }, { status: 500 });
+
+  if (result.outcome === 'not_found') {
+    return NextResponse.json({ error: result.reason }, { status: 404 });
+  }
+  if (result.outcome === 'failed') {
+    return NextResponse.json({ error: result.reason }, { status: 500 });
+  }
 
   return NextResponse.json({
     ok: true,
-    final_percentage: newFinal,
-    final_confidence: newLevel,
+    final_percentage: result.finalPercentage,
+    final_confidence: result.finalConfidence,
   });
 }
 
