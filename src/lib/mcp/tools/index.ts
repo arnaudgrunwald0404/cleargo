@@ -39,6 +39,10 @@ import { updateCriterionStatus, InputSchema as updateCriterionStatusSchema } fro
 import { findEpicsTool, InputSchema as findEpicsSchema } from './find-epics';
 import { getEpicTool, InputSchema as getEpicSchema } from './get-epic';
 import { listReleases } from './list-releases';
+import { getSuccessMetrics, InputSchema as getSuccessMetricsSchema } from './get-success-metrics';
+import { getSuccessScorecards, InputSchema as getSuccessScorecardsSchema } from './get-success-scorecards';
+import { listRetros, InputSchema as listRetrosSchema } from './list-retros';
+import { getHeartMetrics, InputSchema as getHeartMetricsSchema } from './get-heart-metrics';
 
 type ToolHandler = (
     supabase: SupabaseClient,
@@ -162,6 +166,35 @@ const TOOLS: ToolDefinition[] = [
         inputSchema: {},
         readOnly: true,
         handler: getPendingGtmAccess,
+    },
+
+    {
+        name: 'get-heart-metrics',
+        description: 'The HEART dashboard for an epic: categories, metrics, latest values and trend. Optionally as of a past date.',
+        inputSchema: getHeartMetricsSchema.shape,
+        readOnly: true,
+        handler: getHeartMetrics,
+    },
+    {
+        name: 'get-success-metrics',
+        description: 'The success plan for an epic and its latest values. An unpublished plan is hidden unless the caller can configure success measurement -- the response says so rather than returning an empty list.',
+        inputSchema: getSuccessMetricsSchema.shape,
+        readOnly: true,
+        handler: getSuccessMetrics,
+    },
+    {
+        name: 'get-success-scorecards',
+        description: 'Post-launch scorecard snapshots for an epic, newest first.',
+        inputSchema: getSuccessScorecardsSchema.shape,
+        readOnly: true,
+        handler: getSuccessScorecards,
+    },
+    {
+        name: 'list-retros',
+        description: 'Retrospectives for an epic by day marker, with status and submitter.',
+        inputSchema: listRetrosSchema.shape,
+        readOnly: true,
+        handler: listRetros,
     },
 
     // ── Write ───────────────────────────────────────────────────────────────

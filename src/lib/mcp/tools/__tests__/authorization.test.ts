@@ -25,6 +25,7 @@ import type { McpAuthInfo } from '@/lib/oauth/tokens';
 import { reviewArtifact } from '../review-artifact';
 import { updateArtifact } from '../update-artifact';
 import { updateCriterionStatus } from '../update-criterion-status';
+import { getSuccessMetrics } from '../get-success-metrics';
 
 /**
  * The gate resolves DB-configured permission overrides (lib/permissions-server),
@@ -40,6 +41,13 @@ jest.mock('@/lib/settings-db', () => ({
     getEffectivePermissionRules: async () =>
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         (require('@/lib/permissions') as typeof import('@/lib/permissions')).DEFAULT_RULES,
+}));
+
+const mockConfig = jest.fn();
+const mockMetrics = jest.fn();
+jest.mock('@/lib/services/successMeasurementService', () => ({
+    getEpicSuccessConfig: (...args: unknown[]) => mockConfig(...args),
+    getEpicSuccessMetrics: (...args: unknown[]) => mockMetrics(...args),
 }));
 
 function actor(roles: string[]): McpAuthInfo {
@@ -251,5 +259,71 @@ describe('update-criterion-status', () => {
 
         expect(result).toMatchObject({ error: expect.stringContaining('Nothing to update') });
         expect(seen).toHaveLength(0);
+    });
+});
+
+/**
+ * The unpublished-metrics rule exists only in the HTTP route, so the connector
+ * has to carry its own copy. Getting it wrong leaks draft targets that the UI
+ * deliberately hides, and the failure is invisible until someone quotes an
+ * unpublished number at a stakeholder.
+ */
+describe('get-success-metrics visibility', () => {
+    const EPIC = '44444444-4444-4444-8444-444444444444';
+    const SUPABASE = {} as unknown as SupabaseClient;
+
+    beforeEach(() => {
+        mockConfig.mockReset();
+        mockMetrics.mockReset();
+        mockMetrics.mockResolvedValue([{ id: 'm1' }]);
+    });
+
+    it('hides an unpublished plan from someone who cannot configure it', async () => {
+        mockConfig.mockResolvedValue({ success_metrics_published_at: null, locked_at: null });
+
+        const result = (await getSuccessMetrics(SUPABASE, { epicId: EPIC }, actor(['ENG']))) as {
+            metrics: unknown[];
+            note?: string;
+        };
+
+        expect(result.metrics).toEqual([]);
+        // Not an empty list on its own -- "hidden" and "none" must be tellable apart.
+        expect(result.note).toContain('not published');
+        expect(mockMetrics).not.toHaveBeenCalled();
+    });
+
+    it('shows an unpublished plan to someone who can configure success measurement', async () => {
+        mockConfig.mockResolvedValue({ success_metrics_published_at: null, locked_at: null });
+
+        const result = (await getSuccessMetrics(SUPABASE, { epicId: EPIC }, actor(['PRODUCT_OPS']))) as {
+            metrics: unknown[];
+        };
+
+        expect(result.metrics).toHaveLength(1);
+    });
+
+    it('shows a published plan to everyone', async () => {
+        mockConfig.mockResolvedValue({
+            success_metrics_published_at: '2026-01-01T00:00:00Z',
+            locked_at: null,
+        });
+
+        const result = (await getSuccessMetrics(SUPABASE, { epicId: EPIC }, actor(['ENG']))) as {
+            metrics: unknown[];
+        };
+
+        expect(result.metrics).toHaveLength(1);
+    });
+
+    it('reports a missing config as absent rather than hidden', async () => {
+        mockConfig.mockResolvedValue(null);
+
+        const result = (await getSuccessMetrics(SUPABASE, { epicId: EPIC }, actor(['ENG']))) as {
+            config: unknown;
+            note?: string;
+        };
+
+        expect(result.config).toBeNull();
+        expect(result.note).toBeUndefined();
     });
 });
