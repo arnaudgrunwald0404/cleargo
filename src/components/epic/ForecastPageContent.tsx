@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Badge,
   Button,
+  Collapse,
   Group,
   NumberInput,
   Paper,
@@ -18,7 +19,7 @@ import {
   Anchor,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconChartLine, IconPencil, IconDeviceFloppy, IconX, IconSparkles } from '@tabler/icons-react';
+import { IconChartLine, IconPencil, IconDeviceFloppy, IconX, IconSparkles, IconChevronDown, IconChevronRight } from '@tabler/icons-react';
 import { PurpleLoader } from '../PurpleLoader';
 import { MarkdownLite } from '@/components/MarkdownLite';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
@@ -136,6 +137,32 @@ function scenarioLabel(s: Scenario): string {
   return s[0].toUpperCase() + s.slice(1);
 }
 
+/** Best-effort numeric parse of a free-text assumption value like "$7,500" or "15%" or "1,368". */
+function parseNumeric(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const cleaned = value.replace(/[^0-9.\-]/g, '');
+  if (!cleaned || cleaned === '-' || cleaned === '.') return null;
+  const n = parseFloat(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function assumptionValueForScenario(a: ForecastAssumption, scenario: Scenario): string | null {
+  return scenario === 'bear' ? a.value_bear : scenario === 'base' ? a.value_base : a.value_bull;
+}
+
+/**
+ * Finds the assumption whose key or label best matches one of the given keyword patterns.
+ * Generated forecasts use fixed canonical keys (see orchestrator.ts); migrated forecasts have
+ * LLM-improvised keys per product, so this matches loosely on substrings rather than exact keys.
+ */
+function findAssumptionLike(assumptions: ForecastAssumption[], patterns: string[]): ForecastAssumption | undefined {
+  return assumptions.find((a) => {
+    const key = a.key.toLowerCase();
+    const label = a.label.toLowerCase();
+    return patterns.some((p) => key.includes(p) || label.includes(p));
+  });
+}
+
 export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
   const [data, setData] = useState<ForecastCurrentResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -152,6 +179,8 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
   const [saving, setSaving] = useState(false);
   const [editAssumptions, setEditAssumptions] = useState<ForecastAssumption[]>([]);
   const [editPeriods, setEditPeriods] = useState<ForecastPeriod[]>([]);
+
+  const [expandedPeriodId, setExpandedPeriodId] = useState<string | null>(null);
 
   const [generating, setGenerating] = useState(false);
   const [generationJobId, setGenerationJobId] = useState<string | null>(null);
@@ -443,6 +472,98 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
   const { run } = data;
   const isViewingHistorical = viewingRunId !== null && viewingRunId !== run.id;
 
+  // Generated forecasts use fixed canonical assumption keys (see orchestrator.ts) so a real
+  // formula can be shown; migrated forecasts have LLM-improvised keys per product and no stored
+  // formula at all (the numbers came from extracting a hand-built document — see the Phase 3
+  // commit for why those aren't force-fit into one recompute). Either way we only ever derive
+  // *from the row's own stored numbers* — never re-simulate the ramp — so nothing shown here can
+  // drift from what's actually displayed in the table.
+  const renderRowExplanation = (row: ForecastPeriod) => {
+    const assumptions = data.assumptions;
+    const acvA = findAssumptionLike(assumptions, ['acv']);
+    const poolA = findAssumptionLike(assumptions, ['eligible_pool', 'eligible pool']);
+    const penetrationA = findAssumptionLike(assumptions, ['penetration']);
+    const rampA = findAssumptionLike(assumptions, ['ramp']);
+    const crossSellShareA = findAssumptionLike(assumptions, ['cross_sell_share', 'cross-sell share']);
+    const atRiskA = findAssumptionLike(assumptions, ['at_risk', 'at-risk']);
+    const protectionA = findAssumptionLike(assumptions, ['protection_rate', 'protection rate']);
+
+    const inputRows = [acvA, poolA, penetrationA, rampA, crossSellShareA, atRiskA, protectionA].filter(
+      (a): a is ForecastAssumption => Boolean(a)
+    );
+
+    const total = row.cross_sell_arr_usd + row.net_new_arr_usd;
+    const crossSellPct = total > 0 ? (row.cross_sell_arr_usd / total) * 100 : null;
+    const netNewPct = total > 0 ? (row.net_new_arr_usd / total) * 100 : null;
+
+    const acv = parseNumeric(acvA ? assumptionValueForScenario(acvA, scenario) : null);
+    const impliedAcvMonths = acv && acv > 0 ? total / (acv / 12) : null;
+
+    const atRisk = parseNumeric(atRiskA ? assumptionValueForScenario(atRiskA, scenario) : null);
+    const protectedPctOfAtRisk = atRisk && atRisk > 0 ? (row.churn_reduction_arr_usd / atRisk) * 100 : null;
+
+    return (
+      <Stack gap="sm" py="sm" px="md">
+        {inputRows.length > 0 && (
+          <div>
+            <Text size="xs" fw={600} tt="uppercase" c="dimmed" mb={4}>
+              Inputs used — {scenarioLabel(scenario)}
+            </Text>
+            <Table withTableBorder={false} withColumnBorders={false} verticalSpacing={2}>
+              <Table.Tbody>
+                {inputRows.map((a) => (
+                  <Table.Tr key={a.id}>
+                    <Table.Td style={{ border: 'none' }}>
+                      <Text size="xs">{a.label}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ border: 'none' }}>
+                      <Text size="xs" fw={600}>{assumptionValueForScenario(a, scenario) ?? '—'}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ border: 'none' }}>
+                      <Badge size="xs" color={CONFIDENCE_COLOR[a.confidence]} variant="light">
+                        {CONFIDENCE_LABEL[a.confidence]}
+                      </Badge>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </div>
+        )}
+
+        <div>
+          <Text size="xs" fw={600} tt="uppercase" c="dimmed" mb={4}>
+            This row&apos;s numbers
+          </Text>
+          <Text size="xs">
+            Cross-sell {formatUsd(row.cross_sell_arr_usd)}{crossSellPct !== null ? ` (${crossSellPct.toFixed(0)}% of bookings)` : ''} + net-new{' '}
+            {formatUsd(row.net_new_arr_usd)}{netNewPct !== null ? ` (${netNewPct.toFixed(0)}%)` : ''} = total bookings {formatUsd(total)}.
+          </Text>
+          {impliedAcvMonths !== null && (
+            <Text size="xs" mt={4}>
+              Total bookings ÷ (ACV ÷ 12) ≈ <b>{impliedAcvMonths.toFixed(1)} months</b> of full-rate ACV realized this
+              period — consistent with accounts ramping in through the period rather than a flat headcount at a single
+              point in time.
+            </Text>
+          )}
+          {row.churn_reduction_arr_usd > 0 && (
+            <Text size="xs" mt={4}>
+              Protected ARR {formatUsd(row.churn_reduction_arr_usd)}
+              {protectedPctOfAtRisk !== null ? ` is ${protectedPctOfAtRisk.toFixed(0)}% of the ${formatUsd(atRisk!)} at-risk pool` : ''} — tracked
+              separately from bookings, never summed into the total above.
+            </Text>
+          )}
+        </div>
+
+        <Text size="xs" c="dimmed">
+          {run.source === 'generated'
+            ? 'Computed by the deterministic ramp × price × volume engine from the assumptions above (src/lib/forecast/engine.ts).'
+            : 'Extracted from the original migrated forecast document — the assumptions above are as stated there. Open "view original migrated document" below for the full reasoning.'}
+        </Text>
+      </Stack>
+    );
+  };
+
   const renderPeriodTable = (title: string, rows: ForecastPeriod[], emptyLabel: string) => (
     <Paper withBorder p="md">
       <Title order={5} mb="sm">{title} — {scenarioLabel(scenario)}</Title>
@@ -503,13 +624,30 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
                   </Table.Td>
                 </Table.Tr>
               ) : (
-                <Table.Tr key={row.id}>
-                  <Table.Td>{row.period_label}</Table.Td>
-                  <Table.Td>{formatUsd(row.cross_sell_arr_usd)}</Table.Td>
-                  <Table.Td>{formatUsd(row.net_new_arr_usd)}</Table.Td>
-                  <Table.Td fw={600}>{formatUsd(row.total_arr_usd)}</Table.Td>
-                  <Table.Td>{formatUsd(row.churn_reduction_arr_usd)}</Table.Td>
-                </Table.Tr>
+                <React.Fragment key={row.id}>
+                  <Table.Tr
+                    onClick={() => setExpandedPeriodId((prev) => (prev === row.id ? null : row.id))}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <Table.Td>
+                      <Group gap={4} wrap="nowrap">
+                        {expandedPeriodId === row.id ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+                        {row.period_label}
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>{formatUsd(row.cross_sell_arr_usd)}</Table.Td>
+                    <Table.Td>{formatUsd(row.net_new_arr_usd)}</Table.Td>
+                    <Table.Td fw={600}>{formatUsd(row.total_arr_usd)}</Table.Td>
+                    <Table.Td>{formatUsd(row.churn_reduction_arr_usd)}</Table.Td>
+                  </Table.Tr>
+                  <Table.Tr>
+                    <Table.Td colSpan={5} p={0} style={{ border: expandedPeriodId === row.id ? undefined : 'none' }}>
+                      <Collapse in={expandedPeriodId === row.id}>
+                        <div style={{ background: 'var(--color-surface, #f9fafb)' }}>{renderRowExplanation(row)}</div>
+                      </Collapse>
+                    </Table.Td>
+                  </Table.Tr>
+                </React.Fragment>
               )
             )
           )}
