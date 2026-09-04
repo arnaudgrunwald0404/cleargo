@@ -70,6 +70,7 @@ export default function PapricoAgendaView() {
     const [newLength, setNewLength] = useState<number | string>(60);
     const [creating, setCreating] = useState(false);
     const [calendarSuggestion, setCalendarSuggestion] = useState<NextCalendarEvent | null>(null);
+    const [calendarUnavailable, setCalendarUnavailable] = useState<string | null>(null);
 
     const [standingOpen, setStandingOpen] = useState(false);
     const [standingTitle, setStandingTitle] = useState("");
@@ -136,9 +137,22 @@ export default function PapricoAgendaView() {
         (async () => {
             try {
                 const res = await fetch("/api/paprico/next-calendar-meeting");
-                if (!res.ok) return;
+                if (!res.ok) {
+                    if (!stale) setCalendarUnavailable(`request failed (HTTP ${res.status})`);
+                    return;
+                }
                 const body = await res.json();
-                if (!stale && body.found) setCalendarSuggestion(body.event as NextCalendarEvent);
+                if (stale) return;
+                if (body.found) {
+                    setCalendarSuggestion(body.event as NextCalendarEvent);
+                    setCalendarUnavailable(null);
+                } else if (body.reason !== "no_matching_event") {
+                    // Config problems (not connected, missing scope, API disabled)
+                    // should diagnose themselves for the people who can fix them.
+                    setCalendarUnavailable(
+                        `${body.reason ?? "unknown"}${body.detail ? ` — ${body.detail}` : ""}`
+                    );
+                }
             } catch {
                 // No suggestion is fine; the form works without one.
             }
@@ -674,6 +688,11 @@ export default function PapricoAgendaView() {
                             <Button size="compact-xs" variant="light" onClick={applyCalendarSuggestion}>
                                 Use this date
                             </Button>
+                        </div>
+                    )}
+                    {!calendarSuggestion && calendarUnavailable && canWrite && (
+                        <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 break-words">
+                            Calendar suggestion unavailable: {calendarUnavailable}
                         </div>
                     )}
                     <TextInput
