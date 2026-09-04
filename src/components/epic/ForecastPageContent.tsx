@@ -20,6 +20,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import { IconChartLine, IconPencil, IconDeviceFloppy, IconX, IconSparkles } from '@tabler/icons-react';
 import { PurpleLoader } from '../PurpleLoader';
+import { MarkdownLite } from '@/components/MarkdownLite';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 
 interface ForecastPageContentProps {
@@ -178,7 +179,7 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
           setGenerating(false);
           setGenerationJobId(null);
           notifications.show({ color: 'green', message: 'Forecast generated.' });
-          await Promise.all([fetchForecast(null), fetchVersions()]);
+          await Promise.all([fetchForecastAfterCompletion(), fetchVersions()]);
         } else if (job.status === 'failed') {
           clearInterval(interval);
           setGenerating(false);
@@ -217,7 +218,9 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
     }
   };
 
-  const fetchForecast = async (runId: string | null) => {
+  // Returns what it fetched (or null on failure) so callers — e.g. the generation-completion
+  // handler below — can check the result directly instead of racing React's state updates.
+  const fetchForecast = async (runId: string | null): Promise<ForecastCurrentResponse | null> => {
     setLoading(true);
     setError(null);
     try {
@@ -226,8 +229,10 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
       if (!res.ok) throw new Error(`Failed to load forecast (${res.status})`);
       const json = (await res.json()) as ForecastCurrentResponse;
       setData(json);
+      return json;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load forecast');
+      return null;
     } finally {
       setLoading(false);
     }
@@ -244,11 +249,42 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
     }
   };
 
-  useEffect(() => {
-    if (epicAhaId) {
-      fetchForecast(null);
-      fetchVersions();
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Loads a just-completed run, retrying once after a short delay if the read doesn't show it
+  // yet (the completion write and this read go through separate Supabase clients — background
+  // function vs. this route — so there's a narrow window where a read-immediately-after-write
+  // could land before it's visible).
+  const fetchForecastAfterCompletion = async () => {
+    const first = await fetchForecast(null);
+    if (!first?.run) {
+      await sleep(1500);
+      await fetchForecast(null);
     }
+  };
+
+  useEffect(() => {
+    if (!epicAhaId) return;
+    fetchForecast(null);
+    fetchVersions();
+
+    // The Forecast tab is conditionally rendered by its parent (mounted only while active), so
+    // switching tabs away and back — or a plain reload — mid-generation drops any in-flight
+    // polling interval and its local state. Check for a pending/running job on every mount and
+    // resume the generating UI + polling if one exists, instead of showing a stale empty state
+    // until the job finishes server-side and the user happens to refresh again.
+    fetchWithRateLimit(`/api/forecasts/${encodeURIComponent(epicAhaId)}/generate-status`, { maxRetries: 1 })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const job = (await res.json()) as { id: string; status: string } | null;
+        if (job && (job.status === 'pending' || job.status === 'running')) {
+          setGenerating(true);
+          setGenerationJobId(job.id);
+        }
+      })
+      .catch(() => {
+        // Best-effort resume check — not critical if it fails.
+      });
   }, [epicAhaId]);
 
   const loadRawMarkdown = () => {
@@ -629,7 +665,7 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
       {NARRATIVE_ORDER.filter((s) => narrativeBySection.has(s)).map((section) => (
         <Paper withBorder p="md" key={section}>
           <Title order={5} mb="sm">{NARRATIVE_TITLE[section]}</Title>
-          <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>{narrativeBySection.get(section)!.content}</Text>
+          <MarkdownLite content={narrativeBySection.get(section)!.content} />
         </Paper>
       ))}
 
