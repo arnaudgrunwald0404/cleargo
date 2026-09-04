@@ -27,6 +27,8 @@ export interface ForecastEpicSummary {
   launch_tier: string | null;
   gtm_module: string | null;
   release: string | null;
+  /** review_status of the current forecast_runs row, if any (draft/ready_for_review/in_review/aligned). */
+  review_status: string | null;
   links: ForecastLink[];
 }
 
@@ -57,8 +59,13 @@ async function getHandler(_req: NextRequest) {
   // this page has always shown one number for per epic).
   const { data: currentRuns } = await adminSupabase
     .from('forecast_runs')
-    .select('id, epic_id, epic_aha_id, created_at, created_by')
+    .select('id, epic_id, epic_aha_id, created_at, created_by, review_status')
     .eq('is_current', true);
+
+  const reviewStatusByAhaId = new Map<string, string | null>();
+  for (const run of currentRuns ?? []) {
+    reviewStatusByAhaId.set(run.epic_aha_id as string, (run.review_status as string | null) ?? null);
+  }
 
   const runRows: Array<{ epic_aha_id: string; link: ForecastLink; epic_id: string | null }> = [];
   if (currentRuns && currentRuns.length > 0) {
@@ -179,6 +186,7 @@ async function getHandler(_req: NextRequest) {
         launch_tier: meta?.launch_tier ?? null,
         gtm_module: meta?.gtm_module ?? null,
         release: meta?.release ?? null,
+        review_status: reviewStatusByAhaId.get(key) ?? null,
         links: [],
       });
     }

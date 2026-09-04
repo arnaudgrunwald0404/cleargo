@@ -34,7 +34,7 @@ async function getHandler(
 
     let runQuery = adminSupabase
         .from('forecast_runs')
-        .select('id, epic_aha_id, source, status, is_current, created_at, created_by')
+        .select('id, epic_aha_id, source, status, review_status, is_current, created_at, created_by')
         .eq('epic_aha_id', epicAhaId);
     runQuery = requestedRunId ? runQuery.eq('id', requestedRunId) : runQuery.eq('is_current', true);
     const { data: run, error: runError } = await runQuery.maybeSingle();
