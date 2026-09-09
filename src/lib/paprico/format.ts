@@ -65,9 +65,17 @@ export function buildSlackAgendaBlock(meeting: PapricoMeeting, agenda: PapricoAg
         for (const item of agenda.standing) lines.push(`• ${agendaRowLine(item)}`);
     }
 
-    if (agenda.total_time_box_minutes > 0) {
+    const unbudgeted = agenda.unbudgeted_item_count ?? 0;
+    if (agenda.total_time_box_minutes > 0 || unbudgeted > 0) {
         lines.push('');
-        lines.push(`Time boxed: ${agenda.total_time_box_minutes} min of ${meeting.meeting_length_minutes} min`);
+        // The unbudgeted count has to travel with the total: without it a 52 min
+        // total against a 90 min meeting reads as spare capacity when most of
+        // the items simply have no box.
+        const unbudgetedNote =
+            unbudgeted > 0 ? ` · ${unbudgeted} item${unbudgeted === 1 ? '' : 's'} unbudgeted` : '';
+        lines.push(
+            `Time boxed: ${agenda.total_time_box_minutes} min of ${meeting.meeting_length_minutes} min${unbudgetedNote}`
+        );
     }
     return lines.join('\n');
 }

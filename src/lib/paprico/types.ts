@@ -79,6 +79,10 @@ export interface PapricoGatingCriterion {
     criterion_id: string;
     enabled: boolean;
     lookahead_days: number | null; // null = default lookahead
+    /** Epic tiers this criterion pulls onto the agenda. Empty/null = the DB default. */
+    tiers: EpicTier[];
+    /** Time box stamped onto generated items; null leaves them unbudgeted. */
+    default_time_box_minutes: number | null;
     created_at?: string;
     updated_at?: string;
     /** Joined from criterion for display; null when the criterion was deleted. */
@@ -119,4 +123,13 @@ export interface PapricoAgenda {
     approaching: AgendaItem[];
     standing: AgendaItem[];
     total_time_box_minutes: number;
+    /**
+     * Items with no time box at all. Kept beside the total rather than folded
+     * into it: an unbudgeted item contributes zero minutes, so the total alone
+     * reads as spare capacity when it is really an unknown.
+     *
+     * Optional because agendas frozen into paprico_meeting.agenda_snapshot
+     * before this field existed are read back as-is.
+     */
+    unbudgeted_item_count?: number;
 }

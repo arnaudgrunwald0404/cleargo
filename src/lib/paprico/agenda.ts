@@ -139,8 +139,43 @@ export function sectionForItem(item: Pick<AgendaItem, 'source' | 'band'>): 'over
     return 'approaching';
 }
 
-export function totalTimeBoxMinutes(items: Array<{ time_box_minutes: number | null }>): number {
-    return items.reduce((sum, i) => sum + (i.time_box_minutes ?? 0), 0);
+/**
+ * Sum of the item time boxes, plus how many items carry no box at all.
+ *
+ * The count is not decoration: an unbudgeted item used to total as zero, so an
+ * agenda of 85 items reported 52 minutes against a 90 minute meeting and read
+ * as spare capacity. The caller renders both numbers so the gap is visible.
+ */
+export function totalTimeBoxMinutes(
+    items: Array<{ time_box_minutes: number | null }>
+): { minutes: number; unbudgetedCount: number } {
+    let minutes = 0;
+    let unbudgetedCount = 0;
+    for (const item of items) {
+        if (item.time_box_minutes == null) unbudgetedCount += 1;
+        else minutes += item.time_box_minutes;
+    }
+    return { minutes, unbudgetedCount };
+}
+
+/** Tier scope applied to a gating criterion that has none configured. */
+export const DEFAULT_GATING_TIERS: readonly string[] = ['TIER_1', 'TIER_2'];
+
+/**
+ * Whether a gating criterion pulls an epic of this tier onto the agenda.
+ *
+ * A null tier is out of scope: an untiered epic has not been triaged, and the
+ * point of the filter is to bound what the committee is asked to look at.
+ * Untiered epics with a real commercial gap are therefore invisible here --
+ * see the PR note; the fix belongs in epic triage, not in this filter.
+ */
+export function isTierInScope(
+    epicTier: string | null | undefined,
+    criterionTiers: readonly string[] | null | undefined
+): boolean {
+    if (!epicTier) return false;
+    const scope = criterionTiers?.length ? criterionTiers : DEFAULT_GATING_TIERS;
+    return scope.includes(epicTier);
 }
 
 /** System note appended when a criterion flips complete and the item auto-closes. */

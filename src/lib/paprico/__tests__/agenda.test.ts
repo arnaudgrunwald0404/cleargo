@@ -5,8 +5,10 @@ import {
     compareAgendaItems,
     composeReleaseItemTitle,
     computeUrgencyBand,
+    DEFAULT_GATING_TIERS,
     isCriterionStatusComplete,
     isOpenCommitment,
+    isTierInScope,
     isWithinLookahead,
     sectionForItem,
     totalTimeBoxMinutes,
@@ -250,13 +252,65 @@ describe('system notes and time boxes', () => {
         expect(appendSystemNote('earlier note', note)).toBe(`earlier note\n${note}`);
     });
 
-    it('totals time-boxed minutes ignoring unset boxes', () => {
+    it('totals time-boxed minutes and counts the unbudgeted ones separately', () => {
         expect(
             totalTimeBoxMinutes([
                 { time_box_minutes: 10 },
                 { time_box_minutes: null },
                 { time_box_minutes: 15 },
             ])
-        ).toBe(25);
+        ).toEqual({ minutes: 25, unbudgetedCount: 1 });
+    });
+
+    it('reports an all-unbudgeted agenda as zero minutes, not as spare capacity', () => {
+        // The live 2026-09-18 run: 85 items totalling 52 minutes of a 90 minute
+        // meeting, because a null box summed as zero. The count is what makes
+        // that legible.
+        const items = Array.from({ length: 85 }, (_, i) => ({
+            time_box_minutes: i < 5 ? 10 : null,
+        }));
+        expect(totalTimeBoxMinutes(items)).toEqual({ minutes: 50, unbudgetedCount: 80 });
+    });
+
+    it('returns a zeroed total for an empty agenda', () => {
+        expect(totalTimeBoxMinutes([])).toEqual({ minutes: 0, unbudgetedCount: 0 });
+    });
+});
+
+describe('isTierInScope', () => {
+    it('defaults to Tier 1 and Tier 2', () => {
+        expect(DEFAULT_GATING_TIERS).toEqual(['TIER_1', 'TIER_2']);
+        expect(isTierInScope('TIER_1', null)).toBe(true);
+        expect(isTierInScope('TIER_2', null)).toBe(true);
+        expect(isTierInScope('TIER_3', null)).toBe(false);
+    });
+
+    it('honours a per-criterion scope over the default', () => {
+        // Commercialization is plausibly worth watching at Tier 3; the SVP
+        // forecast review is not. One global floor cannot say both.
+        const broad = ['TIER_1', 'TIER_2', 'TIER_3'];
+        const narrow = ['TIER_1'];
+        expect(isTierInScope('TIER_3', broad)).toBe(true);
+        expect(isTierInScope('TIER_3', narrow)).toBe(false);
+        expect(isTierInScope('TIER_2', narrow)).toBe(false);
+        expect(isTierInScope('TIER_1', narrow)).toBe(true);
+    });
+
+    it('treats an empty scope as the default rather than as "no tiers"', () => {
+        expect(isTierInScope('TIER_1', [])).toBe(true);
+        expect(isTierInScope('TIER_3', [])).toBe(false);
+    });
+
+    it('skips epics with no tier', () => {
+        // An untiered epic has not been triaged, so it is out of scope for the
+        // committee agenda. Deliberate -- see the note on the function.
+        expect(isTierInScope(null, ['TIER_1', 'TIER_2', 'TIER_3'])).toBe(false);
+        expect(isTierInScope(undefined, null)).toBe(false);
+        expect(isTierInScope('', null)).toBe(false);
+    });
+
+    it('does not match an unrecognised tier value', () => {
+        expect(isTierInScope('TIER_0', null)).toBe(false);
+        expect(isTierInScope('tier_1', null)).toBe(false);
     });
 });

@@ -106,9 +106,25 @@ For the next meeting with `status IN (draft, agenda_published)`:
 An item is auto-PROPOSED when:
     the release has a criterion in paprico_gating_criteria WHERE enabled = true
 AND that criterion is not complete for that release
+AND the release's tier is in that criterion's `tiers` scope (default TIER_1, TIER_2)
 AND the release's date for that criterion's Ready By stage
       falls within lookahead_days (default 60) of the meeting date
 ```
+
+**Tier scope is per criterion, not one global floor.** The first live run generated
+78 items of which 33 (42%) were Tier 3, because tier was read only for display.
+A broad criterion such as Commercialization is plausibly worth watching at Tier 3;
+the SVP revenue-forecast review is not, and one setting cannot say both. A release
+with no tier is out of scope: an untriaged release is not something to put in front
+of the committee.
+
+The generated item also carries a `time_box_minutes` from the criterion's
+`default_time_box_minutes` (null leaves it unbudgeted) and an `owner_email`
+resolved as: the criterion's decision owner → the release owner → null.
+
+Narrowing a criterion's tier scope does not retroactively close items that were
+already materialized — a chair may have deferred, blocked or decided on them.
+The scope governs what future computations generate.
 
 Plus, always included regardless of dates:
 
@@ -136,7 +152,10 @@ When a criterion in `paprico_gating_criteria` flips to complete for a release, a
 ## 5. Screens
 
 ### 5.1 Agenda (default view)
-Header: next meeting date, chair, status, total time-boxed minutes versus meeting length (warn when over).
+Header: next meeting date, chair, status, total time-boxed minutes versus meeting
+length (warn when over), and **how many items carry no time box at all**. The two
+numbers travel together: an unbudgeted item contributes zero minutes, so the total
+alone reads as spare capacity when it is really an unknown.
 
 Four sections, in this order:
 

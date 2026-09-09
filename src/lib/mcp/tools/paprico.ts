@@ -213,6 +213,16 @@ export const AddItemInputSchema = z.object({
   category: z.string().max(100).nullish(),
   ownerEmail: z.string().email().nullish(),
   timeBoxMinutes: z.number().int().min(1).max(480).nullish(),
+  epicId: z
+    .string()
+    .uuid()
+    .nullish()
+    .describe('Link the item to an epic (release), from find-epics or get-epic. Requires criterionId.'),
+  criterionId: z
+    .string()
+    .uuid()
+    .nullish()
+    .describe('Link the item to a readiness criterion, from get-epic-criteria. Requires epicId.'),
 });
 
 export async function addPapricoItem(
@@ -227,10 +237,39 @@ export async function addPapricoItem(
     return { error: 'You do not have permission to manage PaPriCo.' };
   }
 
+  const epicId = parsed.data.epicId ?? null;
+  const criterionId = parsed.data.criterionId ?? null;
+  if (Boolean(epicId) !== Boolean(criterionId)) {
+    return { error: 'Link an item with both epicId and criterionId, or with neither.' };
+  }
+
+  // Mirrors the 409 in POST /api/paprico/items: uq_paprico_item_open_release_pair
+  // is scoped to source = 'release', so nothing in the database stops a linked
+  // standing item from duplicating a generated one on the agenda.
+  if (epicId && criterionId) {
+    const { data: existing, error: dupError } = await supabase
+      .from('paprico_item')
+      .select('id, title, source')
+      .eq('epic_id', epicId)
+      .eq('criterion_id', criterionId)
+      .neq('status', 'closed')
+      .limit(1);
+    if (dupError) return { error: dupError.message };
+    if (existing && existing.length > 0) {
+      return {
+        error:
+          'That release and criterion already has an open agenda item. Update the existing item instead of adding a second one.',
+        existingItem: existing[0],
+      };
+    }
+  }
+
   const { data, error } = await supabase
     .from('paprico_item')
     .insert({
       source: 'standing',
+      epic_id: epicId,
+      criterion_id: criterionId,
       title: parsed.data.title,
       description: parsed.data.description ?? null,
       category: parsed.data.category ?? null,
