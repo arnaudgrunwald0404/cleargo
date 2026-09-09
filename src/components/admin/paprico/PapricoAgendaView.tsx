@@ -400,6 +400,10 @@ export default function PapricoAgendaView() {
 
     const overTime =
         meeting && agenda ? agenda.total_time_box_minutes > meeting.meeting_length_minutes : false;
+    // An item with no time box contributes zero minutes, so the total on its own
+    // reads as spare capacity when it is really an unknown. Show the count next
+    // to it rather than folding a guess into the number.
+    const unbudgetedCount = agenda?.unbudgeted_item_count ?? 0;
 
     if (loading) {
         return (
@@ -659,11 +663,25 @@ export default function PapricoAgendaView() {
                         {agenda && (
                             <div>
                                 <Text size="xs" c="dimmed">Time boxed</Text>
-                                <Tooltip label="Sum of item time boxes vs meeting length" withArrow>
-                                    <Text fw={500} c={overTime ? "red" : undefined}>
-                                        {agenda.total_time_box_minutes} / {meeting.meeting_length_minutes} min
-                                        {overTime ? " — over" : ""}
-                                    </Text>
+                                <Tooltip
+                                    label={
+                                        unbudgetedCount > 0
+                                            ? `Sum of item time boxes vs meeting length. ${unbudgetedCount} item${unbudgetedCount === 1 ? " has" : "s have"} no time box, so the total understates the meeting.`
+                                            : "Sum of item time boxes vs meeting length"
+                                    }
+                                    withArrow
+                                >
+                                    <div>
+                                        <Text fw={500} c={overTime ? "red" : undefined}>
+                                            {agenda.total_time_box_minutes} / {meeting.meeting_length_minutes} min
+                                            {overTime ? " — over" : ""}
+                                        </Text>
+                                        {unbudgetedCount > 0 && (
+                                            <Text size="xs" c="orange.7" fw={500}>
+                                                {unbudgetedCount} unbudgeted
+                                            </Text>
+                                        )}
+                                    </div>
                                 </Tooltip>
                             </div>
                         )}

@@ -18,6 +18,7 @@ import {
     daysToStage,
     DEFAULT_LOOKAHEAD_DAYS,
     isCriterionStatusComplete,
+    isTierInScope,
     isWithinLookahead,
     OPEN_COMMITMENT_WINDOW_DAYS,
     PAPRICO_TIMEZONE,
@@ -38,7 +39,15 @@ type EpicRow = {
     tier: string | null;
     status: string | null;
     target_launch_date: string | null;
+    owner_email: string | null;
     aha_fields: unknown;
+};
+
+type StatusRow = {
+    epic_id: string;
+    criterion_id: string;
+    status: string;
+    decision_owner_id: string | null;
 };
 
 type CriterionRow = {
@@ -53,7 +62,9 @@ type CriterionRow = {
 /** Everything the agenda needs, loaded in one parallel round trip (no N+1, spec §6). */
 async function loadAgendaInputs(sb: SupabaseClient) {
     const [gatingRes, itemsRes, settingsRes, scheduleRes, stagesRes] = await Promise.all([
-        sb.from('paprico_gating_criterion').select('criterion_id, enabled, lookahead_days'),
+        sb
+            .from('paprico_gating_criterion')
+            .select('criterion_id, enabled, lookahead_days, tiers, default_time_box_minutes'),
         sb.from('paprico_item').select('*').neq('status', 'closed'),
         sb.from('app_settings').select('paprico_default_lookahead_days').order('id', { ascending: true }).limit(1),
         sb.from('release_schedule').select('release_name, launch_date, cohort2_date').eq('archived', false),
@@ -84,13 +95,16 @@ async function loadAgendaInputs(sb: SupabaseClient) {
             ? sb.from('criterion').select('id, label, category, gate, rating_timing, is_active').in('id', criterionIds)
             : Promise.resolve({ data: [], error: null }),
         gatingIds.length > 0
-            ? sb.from('epic_criterion_status').select('epic_id, criterion_id, status').in('criterion_id', gatingIds)
+            ? sb
+                  .from('epic_criterion_status')
+                  .select('epic_id, criterion_id, status, decision_owner_id')
+                  .in('criterion_id', gatingIds)
             : Promise.resolve({ data: [], error: null }),
     ]);
     if (criteriaRes.error) throw criteriaRes.error;
     if (statusRes.error) throw statusRes.error;
 
-    const statusRows = (statusRes.data ?? []) as Array<{ epic_id: string; criterion_id: string; status: string }>;
+    const statusRows = (statusRes.data ?? []) as StatusRow[];
 
     // Epics referenced by criterion statuses or existing items.
     const epicIds = [
@@ -99,16 +113,28 @@ async function loadAgendaInputs(sb: SupabaseClient) {
             ...openItems.map((i) => i.epic_id).filter((id): id is string => !!id),
         ]),
     ];
-    const epicsRes =
+    // Decision owners referenced by the gating criterion statuses. One batched
+    // lookup for the whole agenda -- resolving these per item would be an N+1
+    // over every epic x criterion pair.
+    const ownerIds = [
+        ...new Set(statusRows.map((s) => s.decision_owner_id).filter((id): id is string => !!id)),
+    ];
+
+    const [epicsRes, ownersRes] = await Promise.all([
         epicIds.length > 0
-            ? await sb
+            ? sb
                   .from('epic')
-                  .select('id, name, tier, status, target_launch_date, aha_fields')
+                  .select('id, name, tier, status, target_launch_date, owner_email, aha_fields')
                   .in('id', epicIds)
                   .eq('archived', false)
                   .neq('status', 'Cancelled')
-            : { data: [], error: null };
+            : Promise.resolve({ data: [], error: null }),
+        ownerIds.length > 0
+            ? sb.from('app_user').select('id, email').in('id', ownerIds)
+            : Promise.resolve({ data: [], error: null }),
+    ]);
     if (epicsRes.error) throw epicsRes.error;
+    if (ownersRes.error) throw ownersRes.error;
 
     const defaultLookahead =
         (settingsRes.data?.[0] as { paprico_default_lookahead_days?: number } | undefined)
@@ -123,6 +149,9 @@ async function loadAgendaInputs(sb: SupabaseClient) {
         criteria: (criteriaRes.data ?? []) as CriterionRow[],
         statusRows,
         epics: (epicsRes.data ?? []) as EpicRow[],
+        ownerEmailById: new Map(
+            ((ownersRes.data ?? []) as Array<{ id: string; email: string | null }>).map((u) => [u.id, u.email])
+        ),
     };
 }
 
@@ -176,13 +205,30 @@ export async function computeAgendaForMeeting(
 ): Promise<PapricoAgenda> {
     const today = options?.todayYmd ?? getCalendarDateStringInTimeZone(PAPRICO_TIMEZONE);
     const inputs = await loadAgendaInputs(sb);
-    const { gating, defaultLookahead, schedule, stages, criteria, statusRows, epics } = inputs;
+    const { gating, defaultLookahead, schedule, stages, criteria, statusRows, epics, ownerEmailById } = inputs;
     let { openItems } = inputs;
 
     const criterionById = new Map(criteria.map((c) => [c.id, c]));
     const epicById = new Map(epics.map((e) => [e.id, e]));
     const statusByPair = new Map(statusRows.map((s) => [`${s.epic_id}:${s.criterion_id}`, s.status]));
     const lookaheadByCriterion = new Map(gating.map((g) => [g.criterion_id, g.lookahead_days ?? defaultLookahead]));
+    const tiersByCriterion = new Map<string, string[] | null>(
+        gating.map((g) => [g.criterion_id, (g.tiers as string[] | null) ?? null])
+    );
+    const defaultTimeBoxByCriterion = new Map<string, number | null>(
+        gating.map((g) => [g.criterion_id, (g.default_time_box_minutes as number | null) ?? null])
+    );
+
+    /**
+     * Owner for a generated item: the criterion's decision owner, falling back
+     * to the epic owner, then null. The decision owner is the person actually
+     * on the hook for the rating; the epic owner is who to chase when nobody
+     * has been named.
+     */
+    const resolveOwnerEmail = (row: StatusRow, epic: EpicRow): string | null => {
+        const decisionOwner = row.decision_owner_id ? ownerEmailById.get(row.decision_owner_id) : null;
+        return decisionOwner ?? epic.owner_email ?? null;
+    };
 
     // 1. Auto-close release items whose criterion is now complete for the epic.
     //    Only proposed/on_agenda/deferred close themselves (spec §4) — blocked and
@@ -214,9 +260,13 @@ export async function computeAgendaForMeeting(
     }
 
     // 2. Materialize missing release items for pairs inside the agenda window.
+    //    Any open item carrying both an epic and a criterion claims that pair,
+    //    standing items included -- a chair who added a linked item by hand for
+    //    an epic x criterion should not then see a generated twin of it. See the
+    //    note on uq_paprico_item_open_release_pair in the PR description.
     const openPairs = new Set(
         openItems
-            .filter((i) => i.source === 'release' && i.epic_id && i.criterion_id)
+            .filter((i) => i.epic_id && i.criterion_id)
             .map((i) => `${i.epic_id}:${i.criterion_id}`)
     );
     const stageInfoByPair = new Map<string, { stageDate: string | null; stageName: string | null; releaseName: string | null }>();
@@ -230,6 +280,10 @@ export async function computeAgendaForMeeting(
         const info = computeStageDateForPair(epic, criterion, schedule, stages);
         stageInfoByPair.set(pairKey, info);
         if (openPairs.has(pairKey)) continue;
+        // Tier scope is per criterion: "Commercialization" may be worth watching
+        // at Tier 3 while the SVP forecast review is not. Without this the agenda
+        // was 42% Tier 3. Untiered epics are out of scope -- see isTierInScope.
+        if (!isTierInScope(epic.tier, tiersByCriterion.get(s.criterion_id))) continue;
         const lookahead = lookaheadByCriterion.get(s.criterion_id) ?? defaultLookahead;
         if (!isWithinLookahead(info.stageDate, meeting.meeting_date, lookahead)) continue;
         openPairs.add(pairKey);
@@ -239,6 +293,8 @@ export async function computeAgendaForMeeting(
             criterion_id: s.criterion_id,
             title: composeReleaseItemTitle(epic.name, criterion.label),
             category: criterion.category,
+            owner_email: resolveOwnerEmail(s, epic),
+            time_box_minutes: defaultTimeBoxByCriterion.get(s.criterion_id) ?? null,
             status: 'proposed',
             created_by: 'system:agenda-sync',
         });
@@ -322,6 +378,8 @@ export async function computeAgendaForMeeting(
     // Standing items keep the chair-controlled order.
     sections.standing.sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title));
 
+    const timeBox = totalTimeBoxMinutes(agendaItems);
+
     return {
         computed_at: new Date().toISOString(),
         today,
@@ -329,6 +387,7 @@ export async function computeAgendaForMeeting(
         overdue_critical: sections.overdue_critical,
         approaching: sections.approaching,
         standing: sections.standing,
-        total_time_box_minutes: totalTimeBoxMinutes(agendaItems),
+        total_time_box_minutes: timeBox.minutes,
+        unbudgeted_item_count: timeBox.unbudgetedCount,
     };
 }
