@@ -19,9 +19,10 @@ import {
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canRolesPerform } from "@/lib/permissions";
 import { formatDateOnlyForDisplay, getCalendarDateStringInTimeZone } from "@/lib/date-utils";
-import { PAPRICO_TIMEZONE } from "@/lib/paprico/agenda";
+import { agendaGroupTitle, groupAgendaItemsByEpic, PAPRICO_TIMEZONE } from "@/lib/paprico/agenda";
 import type { NextCalendarEvent } from "@/lib/google/calendar";
 import type {
+    AgendaEpicGroup,
     AgendaItem,
     OpenCommitment,
     PapricoAgenda,
@@ -413,7 +414,15 @@ export default function PapricoAgendaView() {
         );
     }
 
-    const renderItemRow = (item: AgendaItem, section: AgendaItem[], draggable: boolean) => {
+    // `nested` = rendered inside an epic group, where the epic name, tier,
+    // release and owner already sit on the group header. Repeating them on every
+    // criterion row is what made one epic read as three separate topics.
+    const renderItemRow = (
+        item: AgendaItem,
+        section: AgendaItem[],
+        draggable: boolean,
+        nested = false
+    ) => {
         const live = liveStatus[item.id];
         const status = live?.status ?? item.status;
         return (
@@ -434,17 +443,19 @@ export default function PapricoAgendaView() {
                         className="font-medium text-left text-gray-900 hover:text-indigo-700"
                         onClick={() => setDetailItemId(item.id)}
                     >
-                        {item.title}
+                        {nested ? (item.criterion_label ?? item.title) : item.title}
                     </button>
-                    {item.tier && <Badge variant="outline" color="gray">{item.tier.replace("TIER_", "Tier ")}</Badge>}
+                    {!nested && item.tier && (
+                        <Badge variant="outline" color="gray">{item.tier.replace("TIER_", "Tier ")}</Badge>
+                    )}
                     {item.orphaned && <Badge variant="light" color="orange">orphaned</Badge>}
                     <span className="ml-auto flex items-center gap-2">
                         <ItemStatusBadge status={status} />
                     </span>
                 </div>
                 <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
-                    {item.release_name && <span>Release: {item.release_name}</span>}
-                    {item.criterion_label && <span>Criterion: {item.criterion_label}</span>}
+                    {!nested && item.release_name && <span>Release: {item.release_name}</span>}
+                    {!nested && item.criterion_label && <span>Criterion: {item.criterion_label}</span>}
                     {item.stage_name && (
                         <span>
                             Stage: {item.stage_name} ({formatDateOnlyForDisplay(item.stage_date)})
@@ -457,7 +468,7 @@ export default function PapricoAgendaView() {
                                 : `${item.days_to_stage}d to stage date`}
                         </span>
                     )}
-                    {item.owner_email && <span>Owner: {item.owner_email}</span>}
+                    {!nested && item.owner_email && <span>Owner: {item.owner_email}</span>}
                 </div>
                 {canWrite && (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -507,25 +518,74 @@ export default function PapricoAgendaView() {
         );
     };
 
+    // One epic, one block. The agenda is generated per epic x gating criterion,
+    // so an epic with three open commercial criteria used to take three
+    // top-level rows and read as three decisions to take.
+    const renderEpicGroup = (group: AgendaEpicGroup, section: AgendaItem[], draggable: boolean) => (
+        <div key={group.key} className="border border-gray-200 rounded-lg bg-white">
+            <div className="px-4 py-3 border-b border-gray-100">
+                <div className="flex flex-wrap items-center gap-2">
+                    <BandBadge band={group.band} />
+                    <span className="font-medium text-gray-900">{agendaGroupTitle(group)}</span>
+                    {group.tier && (
+                        <Badge variant="outline" color="gray">{group.tier.replace("TIER_", "Tier ")}</Badge>
+                    )}
+                    <Badge variant="light" color="gray">
+                        {group.items.length} open criteria
+                    </Badge>
+                </div>
+                <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
+                    {group.release_name && <span>Release: {group.release_name}</span>}
+                    {group.owner_email && <span>Owner: {group.owner_email}</span>}
+                    {group.time_box_minutes > 0 && <span>{group.time_box_minutes} min boxed</span>}
+                    {group.unbudgeted_item_count > 0 && (
+                        <span>{group.unbudgeted_item_count} unbudgeted</span>
+                    )}
+                </div>
+            </div>
+            <div className="p-2">
+                <Stack gap="xs">
+                    {group.items.map((i) => renderItemRow(i, section, draggable, true))}
+                </Stack>
+            </div>
+        </div>
+    );
+
     const renderSection = (
         title: string,
         subtitle: string,
         items: AgendaItem[],
         emptyText: string,
         draggable: boolean
-    ) => (
-        <div>
-            <Text fw={600} size="sm" mb={2}>{title}</Text>
-            <Text size="xs" c="dimmed" mb="xs">{subtitle}</Text>
-            {items.length === 0 ? (
-                <div className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-lg px-4 py-3">
-                    {emptyText}
-                </div>
-            ) : (
-                <Stack gap="xs">{items.map((i) => renderItemRow(i, items, draggable))}</Stack>
-            )}
-        </div>
-    );
+    ) => {
+        // Grouping is presentational: `items` stays the flat, already-sorted
+        // section so drag-to-reorder still works off one list of item ids.
+        const groups = groupAgendaItemsByEpic(items);
+        return (
+            <div>
+                <Text fw={600} size="sm" mb={2}>{title}</Text>
+                <Text size="xs" c="dimmed" mb="xs">
+                    {subtitle}
+                    {groups.length > 0 && groups.length !== items.length && (
+                        <> · {items.length} open criteria across {groups.length} releases</>
+                    )}
+                </Text>
+                {items.length === 0 ? (
+                    <div className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-lg px-4 py-3">
+                        {emptyText}
+                    </div>
+                ) : (
+                    <Stack gap="xs">
+                        {groups.map((g) =>
+                            g.epic_id && g.items.length > 1
+                                ? renderEpicGroup(g, items, draggable)
+                                : renderItemRow(g.items[0], items, draggable)
+                        )}
+                    </Stack>
+                )}
+            </div>
+        );
+    };
 
     const renderCommitment = (c: OpenCommitment) => (
         <div key={c.id} className="border border-gray-200 rounded-lg px-4 py-3 bg-white">

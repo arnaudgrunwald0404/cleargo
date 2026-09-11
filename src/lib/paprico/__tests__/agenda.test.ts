@@ -1,4 +1,5 @@
 import {
+    agendaGroupTitle,
     appendSystemNote,
     autoCloseNote,
     commitmentAgeDays,
@@ -6,6 +7,7 @@ import {
     composeReleaseItemTitle,
     computeUrgencyBand,
     DEFAULT_GATING_TIERS,
+    groupAgendaItemsByEpic,
     isCriterionStatusComplete,
     isOpenCommitment,
     isTierInScope,
@@ -142,6 +144,83 @@ describe('compareAgendaItems', () => {
             agendaItem({ id: 'b', band: 'horizon', stage_date: '2026-10-01' }),
         ];
         expect([...items].sort(compareAgendaItems).map((i) => i.id)).toEqual(['b', 'a']);
+    });
+});
+
+describe('groupAgendaItemsByEpic', () => {
+    it('collapses the criteria of one epic into a single block', () => {
+        // The shape that produced the 78-item agenda: 48 epics, several of them
+        // carrying three open commercial criteria each.
+        const groups = groupAgendaItemsByEpic([
+            agendaItem({ id: 'a', epic_id: 'e1', epic_name: 'Onboarding Beta', criterion_label: 'Packaging & Pricing Approved' }),
+            agendaItem({ id: 'b', epic_id: 'e1', epic_name: 'Onboarding Beta', criterion_label: 'Confirmed Pricing Communicated' }),
+            agendaItem({ id: 'c', epic_id: 'e2', epic_name: 'Talent Profile', criterion_label: 'Packaging & Pricing Approved' }),
+        ]);
+        expect(groups).toHaveLength(2);
+        expect(groups[0].epic_name).toBe('Onboarding Beta');
+        expect(groups[0].items.map((i) => i.id)).toEqual(['a', 'b']);
+        expect(groups[1].items.map((i) => i.id)).toEqual(['c']);
+    });
+
+    it('keeps every item exactly once', () => {
+        const items = [
+            agendaItem({ id: 'a', epic_id: 'e1' }),
+            agendaItem({ id: 'b', epic_id: 'e2' }),
+            agendaItem({ id: 'c', epic_id: 'e1' }),
+            agendaItem({ id: 'd', epic_id: null, source: 'standing' }),
+        ];
+        const flattened = groupAgendaItemsByEpic(items).flatMap((g) => g.items.map((i) => i.id));
+        expect(flattened.sort()).toEqual(['a', 'b', 'c', 'd']);
+    });
+
+    it('takes group order and band from the most urgent item, not from the epic', () => {
+        // Callers hand in a section already sorted by compareAgendaItems, so the
+        // first item for an epic is its worst one and the group inherits it.
+        const groups = groupAgendaItemsByEpic([
+            agendaItem({ id: 'a', epic_id: 'e1', band: 'overdue', stage_date: '2026-08-01' }),
+            agendaItem({ id: 'b', epic_id: 'e2', band: 'critical', stage_date: '2026-09-01' }),
+            agendaItem({ id: 'c', epic_id: 'e1', band: 'soon', stage_date: '2026-10-01' }),
+        ]);
+        expect(groups.map((g) => g.epic_id)).toEqual(['e1', 'e2']);
+        expect(groups[0].band).toBe('overdue');
+        expect(groups[0].stage_date).toBe('2026-08-01');
+    });
+
+    it('gives each epic-less item its own group rather than pooling them', () => {
+        const groups = groupAgendaItemsByEpic([
+            agendaItem({ id: 'a', epic_id: null, source: 'standing', title: 'Legacy credit conversion' }),
+            agendaItem({ id: 'b', epic_id: null, source: 'standing', title: 'Discount enforcement' }),
+        ]);
+        expect(groups).toHaveLength(2);
+        expect(groups.map((g) => g.key)).toEqual(['item:a', 'item:b']);
+    });
+
+    it('sums the group time box and counts what is unbudgeted', () => {
+        const groups = groupAgendaItemsByEpic([
+            agendaItem({ id: 'a', epic_id: 'e1', time_box_minutes: 10 }),
+            agendaItem({ id: 'b', epic_id: 'e1', time_box_minutes: 5 }),
+            agendaItem({ id: 'c', epic_id: 'e1', time_box_minutes: null }),
+        ]);
+        expect(groups[0].time_box_minutes).toBe(15);
+        expect(groups[0].unbudgeted_item_count).toBe(1);
+    });
+
+    it('returns no groups for no items', () => {
+        expect(groupAgendaItemsByEpic([])).toEqual([]);
+    });
+});
+
+describe('agendaGroupTitle', () => {
+    it('names a group by its epic', () => {
+        const [group] = groupAgendaItemsByEpic([agendaItem({ epic_name: 'Talent Profile' })]);
+        expect(agendaGroupTitle(group)).toBe('Talent Profile');
+    });
+
+    it('falls back to the item title when there is no epic name', () => {
+        const [group] = groupAgendaItemsByEpic([
+            agendaItem({ epic_id: null, epic_name: null, source: 'standing', title: 'Legacy credit conversion' }),
+        ]);
+        expect(agendaGroupTitle(group)).toBe('Legacy credit conversion');
     });
 });
 

@@ -64,9 +64,18 @@ export async function getPapricoAgenda(
   if (error) return { error: error.message };
   if (!meeting) return { error: 'Meeting not found' };
 
-  const agenda = await computeAgendaForMeeting(supabase, meeting);
-
-  return { meeting, agenda };
+  // computeAgendaForMeeting throws on a failed query or insert, and the tool
+  // registrar flattens a throw into "Internal server error" -- which is what a
+  // caller saw instead of any hint of what went wrong. The HTTP route for the
+  // same computation has always caught this; the tool had not.
+  try {
+    const agenda = await computeAgendaForMeeting(supabase, meeting);
+    return { meeting, agenda };
+  } catch (err) {
+    console.error('[getPapricoAgenda] agenda computation failed:', err);
+    const reason = err instanceof Error ? err.message : String(err);
+    return { error: `Failed to compute agenda: ${reason}` };
+  }
 }
 
 export const DecisionsInputSchema = z.object({
