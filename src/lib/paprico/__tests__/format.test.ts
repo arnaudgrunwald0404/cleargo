@@ -112,6 +112,51 @@ describe('buildSlackAgendaBlock', () => {
         expect(block).toContain('14d overdue');
         expect(block).toContain('Time boxed: 10 min of 60 min');
     });
+
+    it('collapses an epic with several open criteria into one bullet', () => {
+        // What the 2026-09-18 run pasted into #paprico: the same epic once per
+        // gating criterion, reading as three separate decisions to take.
+        const block = buildSlackAgendaBlock(
+            meeting(),
+            emptyAgenda({
+                overdue_critical: [
+                    agendaItem({
+                        id: 'a',
+                        epic_id: 'e1',
+                        epic_name: 'Onboarding Beta',
+                        tier: 'TIER_1',
+                        criterion_label: 'Packaging & Pricing Approved',
+                        owner_email: 'pm@clearcompany.com',
+                        time_box_minutes: 10,
+                    }),
+                    agendaItem({
+                        id: 'b',
+                        epic_id: 'e1',
+                        epic_name: 'Onboarding Beta',
+                        tier: 'TIER_1',
+                        criterion_label: 'Confirmed Pricing Communicated',
+                        time_box_minutes: 5,
+                    }),
+                ],
+            })
+        );
+        expect(block).toContain('• *Onboarding Beta*');
+        expect(block).toContain('Tier 1');
+        expect(block).toContain('15 min');
+        expect(block).toContain('    ◦ Packaging & Pricing Approved');
+        expect(block).toContain('    ◦ Confirmed Pricing Communicated');
+        // One bullet for the epic, not one per criterion.
+        expect(block.split('• *Onboarding Beta*').length - 1).toBe(1);
+    });
+
+    it('leaves a single-criterion epic as a plain one-line bullet', () => {
+        const block = buildSlackAgendaBlock(
+            meeting(),
+            emptyAgenda({ overdue_critical: [agendaItem({ owner_email: 'pm@clearcompany.com' })] })
+        );
+        expect(block).toContain('• AI Notetaker — Packaging & Pricing Approved');
+        expect(block).not.toContain('◦');
+    });
 });
 
 describe('buildMinutesMarkdown', () => {

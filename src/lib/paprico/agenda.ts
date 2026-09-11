@@ -1,5 +1,6 @@
 import { diffCalendarDaysBetweenYmd } from '@/lib/date-utils';
 import type {
+    AgendaEpicGroup,
     AgendaItem,
     PapricoDecisionType,
     UrgencyBand,
@@ -52,6 +53,65 @@ export function compareAgendaItems(a: AgendaItem, b: AgendaItem): number {
     const tierB = b.tier ? (TIER_RANK[b.tier] ?? 9) : 9;
     if (tierA !== tierB) return tierA - tierB;
     return a.title.localeCompare(b.title);
+}
+
+/**
+ * Collapse a sorted section into one block per epic.
+ *
+ * Order is taken from the incoming items, which the caller has already sorted
+ * with compareAgendaItems: an epic lands where its most urgent item put it, and
+ * the items inside the group keep that same relative order. Sorting the groups
+ * again here would be a second, quieter ordering rule to keep in step with the
+ * first.
+ *
+ * Every item comes back out exactly once. An item with no epic is its own
+ * single-item group -- pooling standing items under one "no epic" heading would
+ * merge unrelated topics into a single block.
+ */
+export function groupAgendaItemsByEpic(items: AgendaItem[]): AgendaEpicGroup[] {
+    const groups: AgendaEpicGroup[] = [];
+    const byEpic = new Map<string, AgendaEpicGroup>();
+
+    for (const item of items) {
+        const existing = item.epic_id ? byEpic.get(item.epic_id) : undefined;
+        if (existing) {
+            existing.items.push(item);
+            if (item.time_box_minutes == null) existing.unbudgeted_item_count += 1;
+            else existing.time_box_minutes += item.time_box_minutes;
+            continue;
+        }
+
+        // The first item for an epic is also its most urgent one, so the group
+        // header is simply that item's band and stage.
+        const group: AgendaEpicGroup = {
+            key: item.epic_id ?? `item:${item.id}`,
+            epic_id: item.epic_id,
+            epic_name: item.epic_name,
+            release_name: item.release_name,
+            tier: item.tier,
+            owner_email: item.owner_email,
+            band: item.band,
+            stage_name: item.stage_name,
+            stage_date: item.stage_date,
+            days_to_stage: item.days_to_stage,
+            time_box_minutes: item.time_box_minutes ?? 0,
+            unbudgeted_item_count: item.time_box_minutes == null ? 1 : 0,
+            items: [item],
+        };
+        groups.push(group);
+        if (item.epic_id) byEpic.set(item.epic_id, group);
+    }
+
+    return groups;
+}
+
+/**
+ * What a grouped row is called: the epic name for a real group, and the item's
+ * own title when there is no epic to name it by (standing items, orphans).
+ */
+export function agendaGroupTitle(group: AgendaEpicGroup): string {
+    if (group.epic_name?.trim()) return group.epic_name.trim();
+    return group.items[0]?.title ?? 'Untitled item';
 }
 
 export function composeReleaseItemTitle(

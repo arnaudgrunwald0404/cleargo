@@ -1,5 +1,13 @@
 import { formatDateOnlyForDisplay } from '@/lib/date-utils';
-import type { AgendaItem, OpenCommitment, PapricoAgenda, PapricoDecision, PapricoMeeting } from './types';
+import { agendaGroupTitle, groupAgendaItemsByEpic } from './agenda';
+import type {
+    AgendaEpicGroup,
+    AgendaItem,
+    OpenCommitment,
+    PapricoAgenda,
+    PapricoDecision,
+    PapricoMeeting,
+} from './types';
 
 function fmtDate(ymd: string | null | undefined): string {
     if (!ymd) return '—';
@@ -19,6 +27,45 @@ function agendaRowLine(item: AgendaItem): string {
     if (item.owner_email) parts.push(`owner: ${item.owner_email}`);
     if (item.time_box_minutes) parts.push(`${item.time_box_minutes} min`);
     return parts.join(' · ');
+}
+
+/**
+ * One epic, one bullet, with its open criteria nested underneath.
+ *
+ * The circulated agenda is where the per-criterion fan-out hurt most: the
+ * 2026-09-18 run pasted 78 bullets into #paprico for 48 epics, so the same
+ * product appeared up to five times and the list read as five decisions.
+ *
+ * A group with no epic behind it (a standing item, an orphan) is still a single
+ * bullet, rendered the way it always was -- there is no criterion list to nest.
+ */
+function agendaGroupLines(group: AgendaEpicGroup): string[] {
+    if (!group.epic_id || group.items.length === 1) {
+        return [`• ${agendaRowLine(group.items[0])}`];
+    }
+
+    const header: string[] = [`*${agendaGroupTitle(group)}*`];
+    if (group.tier) header.push(group.tier.replace('TIER_', 'Tier '));
+    if (group.release_name) header.push(group.release_name);
+    if (group.stage_name) header.push(`stage: ${group.stage_name} (${fmtDate(group.stage_date)})`);
+    if (group.band) header.push(bandLabel(group.band));
+    if (group.owner_email) header.push(`owner: ${group.owner_email}`);
+    // Say how much of the block is actually budgeted, for the same reason the
+    // agenda total carries its unbudgeted count rather than hiding it in a sum.
+    if (group.time_box_minutes > 0) header.push(`${group.time_box_minutes} min`);
+    if (group.unbudgeted_item_count > 0) {
+        header.push(`${group.unbudgeted_item_count} unbudgeted`);
+    }
+
+    const lines = [`• ${header.join(' · ')}`];
+    for (const item of group.items) {
+        lines.push(`    ◦ ${item.criterion_label ?? item.title}`);
+    }
+    return lines;
+}
+
+function agendaSectionLines(items: AgendaItem[]): string[] {
+    return groupAgendaItemsByEpic(items).flatMap(agendaGroupLines);
 }
 
 /**
@@ -46,7 +93,7 @@ export function buildSlackAgendaBlock(meeting: PapricoMeeting, agenda: PapricoAg
     if (agenda.overdue_critical.length === 0) {
         lines.push('_Nothing approaching a stage with pricing, naming or forecast criteria open._');
     } else {
-        for (const item of agenda.overdue_critical) lines.push(`• ${agendaRowLine(item)}`);
+        lines.push(...agendaSectionLines(agenda.overdue_critical));
     }
     lines.push('');
 
@@ -54,7 +101,7 @@ export function buildSlackAgendaBlock(meeting: PapricoMeeting, agenda: PapricoAg
     if (agenda.approaching.length === 0) {
         lines.push('_Nothing approaching a stage with pricing, naming or forecast criteria open._');
     } else {
-        for (const item of agenda.approaching) lines.push(`• ${agendaRowLine(item)}`);
+        lines.push(...agendaSectionLines(agenda.approaching));
     }
     lines.push('');
 
