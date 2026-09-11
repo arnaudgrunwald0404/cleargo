@@ -84,8 +84,39 @@ module.exports = {
       // non-fatal
     }
 
+    // --- Remove client-reference manifests for API route handlers ---
+    // Every route.js entry gets a route_client-reference-manifest.js whose payload is the
+    // app's ENTIRE client-module map (~640 KB each, 250+ routes ≈ 160 MB — two thirds of the
+    // handler). Route handlers render no client components, run no SSR, and use no server
+    // actions, and Next's tryLoadClientReferenceManifest (load-components.js) explicitly
+    // tolerates a missing file by returning undefined. Page manifests are named
+    // page_client-reference-manifest.js and are kept — pages genuinely need theirs.
+    // Verified 2026-09-11 by running `next start` with all route manifests deleted: route
+    // handlers and pages both behave identically.
+    let manifestBytes = 0;
+    let manifestCount = 0;
+    const stripRouteManifests = (dir) => {
+      if (!fs.existsSync(dir)) return;
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          stripRouteManifests(full);
+        } else if (entry.isFile() && entry.name === 'route_client-reference-manifest.js') {
+          manifestBytes += fs.statSync(full).size;
+          manifestCount += 1;
+          fs.rmSync(full);
+        }
+      }
+    };
+    // Recurse the whole handler dir rather than assuming where the plugin version puts the
+    // .next output — the filename only ever occurs in Next server app output.
+    stripRouteManifests(handlerDir);
+    console.log(
+      `[slim-handler] Removed ${manifestCount} route_client-reference-manifest.js files (${mb(manifestBytes)})`
+    );
+
     // --- Remove Sharp and @img ---
-    let removed = 0;
+    let removed = manifestBytes;
     removed += removeIfExists(path.join(nodeModules, 'sharp'), 'sharp');
     const imgDir = path.join(nodeModules, '@img');
     if (fs.existsSync(imgDir)) {
