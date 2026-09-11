@@ -7,6 +7,7 @@ import {
   Button,
   Collapse,
   Group,
+  HoverCard,
   NumberInput,
   Paper,
   Select,
@@ -164,6 +165,15 @@ function formatUsd(usd: number): string {
   return `${sign}$${Math.floor(abs / 1000)}K`;
 }
 
+// Monthly figures are often well under $1K, where the floored-$K house format above collapses to
+// a useless "$0K" — so monthly cells and hover math show exact dollars instead (M suffix kept).
+function formatUsdExact(usd: number): string {
+  const sign = usd < 0 ? '-' : '';
+  const abs = Math.abs(usd);
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
+  return `${sign}$${Math.round(abs).toLocaleString()}`;
+}
+
 function scenarioLabel(s: Scenario): string {
   return s[0].toUpperCase() + s.slice(1);
 }
@@ -177,8 +187,58 @@ function parseNumeric(value: string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Parses a percentage-or-fraction assumption value ("15%", "0.15") into a 0-1 fraction. */
+function parseFraction(value: string | null | undefined): number | null {
+  const n = parseNumeric(value);
+  if (n === null) return null;
+  // Only used for rates/shares, which can't legitimately exceed 1 — so a bare "15" means 15%.
+  if ((value && value.includes('%')) || n > 1) return n / 100;
+  return n;
+}
+
 function assumptionValueForScenario(a: ForecastAssumption, scenario: Scenario): string | null {
   return scenario === 'bear' ? a.value_bear : scenario === 'base' ? a.value_base : a.value_bull;
+}
+
+type ModelInputRole = 'gaDate' | 'pool' | 'penetration' | 'ramp' | 'acv' | 'crossSellShare' | 'atRisk' | 'protectionRate';
+
+/**
+ * The model's inputs in calculation order, with a plain-language explainer for each — written for
+ * an audience that doesn't know the product or the model, so anyone in the company can read what
+ * a number IS before deciding whether to challenge its value. The value itself and the "why it's
+ * this value" come from the assumption row (scenario value + source note + confidence).
+ */
+const MODEL_INPUT_DEFS: Array<{ role: ModelInputRole; patterns: string[]; metric: 'bookings' | 'churn'; explainer: string }> = [
+  { role: 'gaDate', patterns: ['ga_date', 'ga date', 'start date'], metric: 'bookings',
+    explainer: 'When the product becomes generally available — revenue starts the month after this.' },
+  { role: 'pool', patterns: ['eligible_pool', 'eligible pool'], metric: 'bookings',
+    explainer: 'Our market size: how many accounts could realistically buy this product.' },
+  { role: 'penetration', patterns: ['penetration'], metric: 'bookings',
+    explainer: 'Our target market share: the fraction of that pool expected to have adopted by the end of year 3.' },
+  { role: 'ramp', patterns: ['ramp'], metric: 'bookings',
+    explainer: 'Adoption speed: the curve deciding how much of the 3-year target has landed by any given month.' },
+  { role: 'acv', patterns: ['acv'], metric: 'bookings',
+    explainer: 'Annual contract value: what one adopting account pays per year.' },
+  { role: 'crossSellShare', patterns: ['cross_sell_share', 'cross-sell share'], metric: 'bookings',
+    explainer: 'Of newly adopting accounts, the share that are existing ClearCompany customers (cross-sell) vs. brand-new logos (net-new).' },
+  { role: 'atRisk', patterns: ['at_risk', 'at-risk'], metric: 'churn',
+    explainer: 'ARR from existing customers judged at risk of churning, which this product could help keep.' },
+  { role: 'protectionRate', patterns: ['protection_rate', 'protection rate'], metric: 'churn',
+    explainer: 'The share of that at-risk ARR we expect this product to save by the end of year 3, phased in gradually from GA.' },
+];
+
+interface ModelInput {
+  role: ModelInputRole;
+  metric: 'bookings' | 'churn';
+  explainer: string;
+  assumption: ForecastAssumption;
+}
+
+function getModelInputs(assumptions: ForecastAssumption[]): ModelInput[] {
+  return MODEL_INPUT_DEFS.flatMap((def) => {
+    const assumption = findAssumptionLike(assumptions, def.patterns);
+    return assumption ? [{ role: def.role, metric: def.metric, explainer: def.explainer, assumption }] : [];
+  });
 }
 
 /**
@@ -227,12 +287,178 @@ function getConstituentMonths(row: ForecastPeriod, allPeriods: ForecastPeriod[])
   return [];
 }
 
+/**
+ * Hover explainer for a single monthly number — the full audit trail behind the cell, built for
+ * company-wide readers who need to challenge assumptions, not just see them: (1) the arithmetic
+ * chain for THIS month, (2) every input with what it is, its value, and why it's that value
+ * (source note + confidence), (3) how to record a disagreement.
+ *
+ * Same rule as the row explanation panel: every derived figure is reverse-derived from the row's
+ * OWN stored numbers (implied accounts = bookings × 12 ÷ ACV, etc.) — never re-simulated — so the
+ * hover can't contradict the table. Migrated hand-built runs, whose inputs may not parse, degrade
+ * to the inputs table plus a pointer at the original document.
+ */
+function MonthMathHover({
+  row,
+  metric,
+  scenario,
+  assumptions,
+  source,
+  children,
+}: {
+  row: ForecastPeriod;
+  metric: 'bookings' | 'churn';
+  scenario: Scenario;
+  assumptions: ForecastAssumption[];
+  source: ForecastRun['source'];
+  children: React.ReactNode;
+}) {
+  const inputs = getModelInputs(assumptions).filter((i) => i.metric === metric || i.role === 'gaDate');
+  const valueOf = (role: ModelInputRole) => {
+    const input = inputs.find((i) => i.role === role);
+    return input ? assumptionValueForScenario(input.assumption, scenario) : null;
+  };
+
+  const total = row.cross_sell_arr_usd + row.net_new_arr_usd;
+  const pool = parseNumeric(valueOf('pool'));
+  const penetration = parseFraction(valueOf('penetration'));
+  const acv = parseNumeric(valueOf('acv'));
+  const targetAccounts = pool !== null && penetration !== null ? pool * penetration : null;
+  const impliedAccounts = acv !== null && acv > 0 ? (total * 12) / acv : null;
+  const impliedRampPct =
+    targetAccounts !== null && targetAccounts > 0 && impliedAccounts !== null
+      ? (impliedAccounts / targetAccounts) * 100
+      : null;
+  const crossSellPct = total > 0 ? (row.cross_sell_arr_usd / total) * 100 : null;
+
+  const atRisk = parseNumeric(valueOf('atRisk'));
+  const protectionRate = parseFraction(valueOf('protectionRate'));
+  const protectedRunRate = row.churn_reduction_arr_usd * 12;
+  const protectedPctOfPool = atRisk !== null && atRisk > 0 ? (protectedRunRate / atRisk) * 100 : null;
+
+  const bookingSteps: string[] = [];
+  if (metric === 'bookings' && pool !== null && penetration !== null && targetAccounts !== null) {
+    bookingSteps.push(`Market size (eligible pool): ${Math.round(pool).toLocaleString()} accounts`);
+    bookingSteps.push(
+      `× 3-year penetration ${(penetration * 100).toFixed(0)}% → target ${Math.round(targetAccounts).toLocaleString()} adopting accounts by year 3`
+    );
+    if (impliedAccounts !== null && impliedRampPct !== null) {
+      bookingSteps.push(
+        `× adoption ramp reached by this month ≈ ${Math.min(100, impliedRampPct).toFixed(0)}% → ≈ ${Math.round(impliedAccounts).toLocaleString()} accounts live and billing`
+      );
+    }
+    if (acv !== null && acv > 0) {
+      bookingSteps.push(`× ACV ${formatUsdExact(acv)} ÷ 12 → ${formatUsdExact(total)} booked this month`);
+    }
+    if (crossSellPct !== null) {
+      bookingSteps.push(
+        `→ split ${crossSellPct.toFixed(0)}% cross-sell (${formatUsdExact(row.cross_sell_arr_usd)}) / ${(100 - crossSellPct).toFixed(0)}% net-new (${formatUsdExact(row.net_new_arr_usd)})`
+      );
+    }
+  }
+  const churnSteps: string[] = [];
+  if (metric === 'churn' && atRisk !== null && protectionRate !== null) {
+    churnSteps.push(`At-risk ARR pool: ${formatUsdExact(atRisk)}`);
+    churnSteps.push(
+      `× protection target ${(protectionRate * 100).toFixed(0)}%, phased in linearly from GA over the 3-year horizon`
+    );
+    churnSteps.push(
+      `→ protected run-rate so far ${formatUsdExact(protectedRunRate)}${protectedPctOfPool !== null ? ` (${protectedPctOfPool.toFixed(0)}% of the pool)` : ''} ÷ 12 = ${formatUsdExact(row.churn_reduction_arr_usd)} this month`
+    );
+  }
+  const steps = metric === 'bookings' ? bookingSteps : churnSteps;
+
+  return (
+    <HoverCard width={460} shadow="md" withinPortal openDelay={250} position="right-start">
+      <HoverCard.Target>
+        <span style={{ cursor: 'help', textDecoration: 'underline dotted', textUnderlineOffset: 3 }}>{children}</span>
+      </HoverCard.Target>
+      <HoverCard.Dropdown p="sm" style={{ maxHeight: 440, overflowY: 'auto' }}>
+        <Stack gap="xs">
+          <Text size="xs" fw={700}>
+            {formatMonthLabel(row.period_label)} · {scenarioLabel(scenario)} — how this{' '}
+            {metric === 'bookings' ? 'bookings number' : 'protected-ARR number'} is calculated
+          </Text>
+
+          {steps.length > 0 ? (
+            <div>
+              <Text size="xs" fw={600} tt="uppercase" c="dimmed" mb={2}>
+                The math for this month
+              </Text>
+              {steps.map((s, i) => (
+                <Text size="xs" key={i} style={{ paddingLeft: i === 0 ? 0 : 8 }}>
+                  {s}
+                </Text>
+              ))}
+              {metric === 'bookings' && (
+                <Text size="xs" c="dimmed" mt={4}>
+                  A month counts every account billing that month — accounts that adopted earlier keep
+                  contributing — not just accounts newly added this month.
+                </Text>
+              )}
+            </div>
+          ) : (
+            <Text size="xs" c="dimmed">
+              {source === 'migrated_from_chrysalis'
+                ? 'This forecast was migrated from a hand-built document, so the exact arithmetic isn’t reconstructable — the inputs below are as stated there. “View original migrated document” at the bottom of the page has the full reasoning.'
+                : 'The inputs needed to show the arithmetic couldn’t be read from this run’s assumptions — see the inputs below and the assumptions table.'}
+            </Text>
+          )}
+
+          <div>
+            <Text size="xs" fw={600} tt="uppercase" c="dimmed" mb={2}>
+              Every number that goes in — and why
+            </Text>
+            <Table withTableBorder={false} withColumnBorders={false} verticalSpacing={4}>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th style={{ border: 'none', paddingLeft: 0 }}><Text size="xs" fw={600}>Input</Text></Table.Th>
+                  <Table.Th style={{ border: 'none' }}><Text size="xs" fw={600}>Value</Text></Table.Th>
+                  <Table.Th style={{ border: 'none' }}><Text size="xs" fw={600}>Why this value</Text></Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {inputs.map((i) => (
+                  <Table.Tr key={i.assumption.id}>
+                    <Table.Td style={{ border: 'none', verticalAlign: 'top', paddingLeft: 0 }}>
+                      <Text size="xs" fw={600}>{i.assumption.label}</Text>
+                      <Text size="xs" c="dimmed">{i.explainer}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ border: 'none', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                      <Text size="xs" fw={600}>{assumptionValueForScenario(i.assumption, scenario) ?? '—'}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ border: 'none', verticalAlign: 'top' }}>
+                      {i.assumption.source_note && <Text size="xs">{i.assumption.source_note}</Text>}
+                      <Badge size="xs" color={CONFIDENCE_COLOR[i.assumption.confidence]} variant="light" mt={i.assumption.source_note ? 2 : 0}>
+                        {CONFIDENCE_LABEL[i.assumption.confidence]}
+                      </Badge>
+                      {i.assumption.overridden_by && (
+                        <Text size="xs" c="orange">Edited by {i.assumption.overridden_by}</Text>
+                      )}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </div>
+
+          <Text size="xs" c="dimmed">
+            Disagree with an input — say, you think adoption will ramp faster than the curve above? Use{' '}
+            <b>Edit</b> on this page to record a different value and save a new version; the current
+            version stays in the history for comparison.
+          </Text>
+        </Stack>
+      </HoverCard.Dropdown>
+    </HoverCard>
+  );
+}
+
 export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
   const [data, setData] = useState<ForecastCurrentResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [scenario, setScenario] = useState<Scenario>('base');
-  const [periodView, setPeriodView] = useState<'year' | 'quarter'>('year');
+  const [periodView, setPeriodView] = useState<'year' | 'quarter' | 'month'>('year');
   const [rawMarkdown, setRawMarkdown] = useState<{ raw_markdown_forecast: string | null; raw_markdown_assumptions: string | null } | null>(null);
   const [rawLoading, setRawLoading] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
@@ -551,6 +777,13 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
         .sort((a, b) => a.sort_order - b.sort_order),
     [displayPeriods, scenario]
   );
+  const monthRows = useMemo(
+    () =>
+      displayPeriods
+        .filter((p) => p.period_type === 'month' && p.scenario === scenario)
+        .sort((a, b) => a.sort_order - b.sort_order),
+    [displayPeriods, scenario]
+  );
   const narrativeBySection = useMemo(() => {
     const map = new Map<NarrativeSection, ForecastNarrative>();
     (data?.narrative ?? []).forEach((n) => map.set(n.section, n));
@@ -610,17 +843,9 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
   // drift from what's actually displayed in the table.
   const renderRowExplanation = (row: ForecastPeriod) => {
     const assumptions = data.assumptions;
-    const acvA = findAssumptionLike(assumptions, ['acv']);
-    const poolA = findAssumptionLike(assumptions, ['eligible_pool', 'eligible pool']);
-    const penetrationA = findAssumptionLike(assumptions, ['penetration']);
-    const rampA = findAssumptionLike(assumptions, ['ramp']);
-    const crossSellShareA = findAssumptionLike(assumptions, ['cross_sell_share', 'cross-sell share']);
-    const atRiskA = findAssumptionLike(assumptions, ['at_risk', 'at-risk']);
-    const protectionA = findAssumptionLike(assumptions, ['protection_rate', 'protection rate']);
-
-    const inputRows = [acvA, poolA, penetrationA, rampA, crossSellShareA, atRiskA, protectionA].filter(
-      (a): a is ForecastAssumption => Boolean(a)
-    );
+    const modelInputs = getModelInputs(assumptions);
+    const acvA = modelInputs.find((i) => i.role === 'acv')?.assumption;
+    const atRiskA = modelInputs.find((i) => i.role === 'atRisk')?.assumption;
 
     const total = row.cross_sell_arr_usd + row.net_new_arr_usd;
     const crossSellPct = total > 0 ? (row.cross_sell_arr_usd / total) * 100 : null;
@@ -638,24 +863,26 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
 
     return (
       <Stack gap="sm" py="sm" px="md">
-        {inputRows.length > 0 && (
+        {modelInputs.length > 0 && (
           <div>
             <Text size="xs" fw={600} tt="uppercase" c="dimmed" mb={4}>
               Inputs used — {scenarioLabel(scenario)}
             </Text>
             <Table withTableBorder={false} withColumnBorders={false} verticalSpacing={2}>
               <Table.Tbody>
-                {inputRows.map((a) => (
-                  <Table.Tr key={a.id}>
-                    <Table.Td style={{ border: 'none' }}>
-                      <Text size="xs">{a.label}</Text>
+                {modelInputs.map((i) => (
+                  <Table.Tr key={i.assumption.id}>
+                    <Table.Td style={{ border: 'none', verticalAlign: 'top' }}>
+                      <Text size="xs">{i.assumption.label}</Text>
+                      <Text size="xs" c="dimmed">{i.explainer}</Text>
                     </Table.Td>
-                    <Table.Td style={{ border: 'none' }}>
-                      <Text size="xs" fw={600}>{assumptionValueForScenario(a, scenario) ?? '—'}</Text>
+                    <Table.Td style={{ border: 'none', verticalAlign: 'top' }}>
+                      <Text size="xs" fw={600}>{assumptionValueForScenario(i.assumption, scenario) ?? '—'}</Text>
                     </Table.Td>
-                    <Table.Td style={{ border: 'none' }}>
-                      <Badge size="xs" color={CONFIDENCE_COLOR[a.confidence]} variant="light">
-                        {CONFIDENCE_LABEL[a.confidence]}
+                    <Table.Td style={{ border: 'none', verticalAlign: 'top' }}>
+                      {i.assumption.source_note && <Text size="xs" c="dimmed">{i.assumption.source_note}</Text>}
+                      <Badge size="xs" color={CONFIDENCE_COLOR[i.assumption.confidence]} variant="light">
+                        {CONFIDENCE_LABEL[i.assumption.confidence]}
                       </Badge>
                     </Table.Td>
                   </Table.Tr>
@@ -693,9 +920,27 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
                   {constituentMonths.map((m) => (
                     <Table.Tr key={m.id}>
                       <Table.Td style={{ border: 'none' }}><Text size="xs">{formatMonthLabel(m.period_label)}</Text></Table.Td>
-                      <Table.Td style={{ border: 'none' }}><Text size="xs">{formatUsd(m.cross_sell_arr_usd)}</Text></Table.Td>
-                      <Table.Td style={{ border: 'none' }}><Text size="xs">{formatUsd(m.net_new_arr_usd)}</Text></Table.Td>
-                      <Table.Td style={{ border: 'none' }}><Text size="xs">{formatUsd(m.total_arr_usd)}</Text></Table.Td>
+                      <Table.Td style={{ border: 'none' }}>
+                        <Text size="xs">
+                          <MonthMathHover row={m} metric="bookings" scenario={scenario} assumptions={assumptions} source={run.source}>
+                            {formatUsdExact(m.cross_sell_arr_usd)}
+                          </MonthMathHover>
+                        </Text>
+                      </Table.Td>
+                      <Table.Td style={{ border: 'none' }}>
+                        <Text size="xs">
+                          <MonthMathHover row={m} metric="bookings" scenario={scenario} assumptions={assumptions} source={run.source}>
+                            {formatUsdExact(m.net_new_arr_usd)}
+                          </MonthMathHover>
+                        </Text>
+                      </Table.Td>
+                      <Table.Td style={{ border: 'none' }}>
+                        <Text size="xs">
+                          <MonthMathHover row={m} metric="bookings" scenario={scenario} assumptions={assumptions} source={run.source}>
+                            {formatUsdExact(m.total_arr_usd)}
+                          </MonthMathHover>
+                        </Text>
+                      </Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
@@ -749,13 +994,29 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
     );
   };
 
-  const renderPeriodTable = (title: string, rows: ForecastPeriod[], emptyLabel: string) => (
+  // Wraps a monthly cell value in the hover explainer; quarter/year cells render plain (they get
+  // the click-to-expand explanation panel instead).
+  const periodCell = (row: ForecastPeriod, value: number, metric: 'bookings' | 'churn') =>
+    row.period_type === 'month' && data ? (
+      <MonthMathHover row={row} metric={metric} scenario={scenario} assumptions={data.assumptions} source={run.source}>
+        {formatUsdExact(value)}
+      </MonthMathHover>
+    ) : (
+      formatUsd(value)
+    );
+
+  const renderPeriodTable = (title: string, periodColHeader: string, rows: ForecastPeriod[], emptyLabel: string) => (
     <Paper withBorder p="md">
       <Title order={5} mb="sm">{title} — {scenarioLabel(scenario)}</Title>
+      {periodColHeader === 'Month' && rows.length > 0 && (
+        <Text size="xs" c="dimmed" mb="xs">
+          Hover any number for the full calculation — every input, its value, and why it&apos;s set where it is.
+        </Text>
+      )}
       <Table striped withTableBorder={false}>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>{title.includes('Quarter') ? 'Quarter' : 'Year'}</Table.Th>
+            <Table.Th>{periodColHeader}</Table.Th>
             <Table.Th>Cross-Sell</Table.Th>
             <Table.Th>Net New</Table.Th>
             <Table.Th>Total Bookings</Table.Th>
@@ -817,13 +1078,13 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
                     <Table.Td>
                       <Group gap={4} wrap="nowrap">
                         {expandedPeriodId === row.id ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
-                        {row.period_label}
+                        {row.period_type === 'month' ? formatMonthLabel(row.period_label) : row.period_label}
                       </Group>
                     </Table.Td>
-                    <Table.Td>{formatUsd(row.cross_sell_arr_usd)}</Table.Td>
-                    <Table.Td>{formatUsd(row.net_new_arr_usd)}</Table.Td>
-                    <Table.Td fw={600}>{formatUsd(row.total_arr_usd)}</Table.Td>
-                    <Table.Td>{formatUsd(row.churn_reduction_arr_usd)}</Table.Td>
+                    <Table.Td>{periodCell(row, row.cross_sell_arr_usd, 'bookings')}</Table.Td>
+                    <Table.Td>{periodCell(row, row.net_new_arr_usd, 'bookings')}</Table.Td>
+                    <Table.Td fw={600}>{periodCell(row, row.total_arr_usd, 'bookings')}</Table.Td>
+                    <Table.Td>{periodCell(row, row.churn_reduction_arr_usd, 'churn')}</Table.Td>
                   </Table.Tr>
                   <Table.Tr>
                     <Table.Td colSpan={5} p={0} style={{ border: expandedPeriodId === row.id ? undefined : 'none' }}>
@@ -929,18 +1190,26 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
         />
         <SegmentedControl
           value={periodView}
-          onChange={(v) => setPeriodView(v as 'year' | 'quarter')}
+          onChange={(v) => setPeriodView(v as 'year' | 'quarter' | 'month')}
           data={[
             { label: 'Yearly', value: 'year' },
             { label: 'Quarterly', value: 'quarter' },
+            { label: 'Monthly', value: 'month' },
           ]}
-          style={{ maxWidth: 220 }}
+          style={{ maxWidth: 320 }}
         />
       </Group>
 
       {periodView === 'year'
-        ? renderPeriodTable('New Bookings by Year', yearRows, 'No annual figures for this scenario.')
-        : renderPeriodTable('Quarterly Detail', quarterRows, 'No quarterly figures for this scenario.')}
+        ? renderPeriodTable('New Bookings by Year', 'Year', yearRows, 'No annual figures for this scenario.')
+        : periodView === 'quarter'
+        ? renderPeriodTable('Quarterly Detail', 'Quarter', quarterRows, 'No quarterly figures for this scenario.')
+        : renderPeriodTable(
+            'Monthly Detail',
+            'Month',
+            monthRows,
+            'No monthly figures for this scenario — this forecast was migrated without month-level detail.'
+          )}
 
       <Paper withBorder p="md">
         <Title order={5} mb="sm">Assumptions</Title>
