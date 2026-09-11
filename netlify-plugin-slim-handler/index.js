@@ -85,14 +85,12 @@ module.exports = {
     }
 
     // --- Remove client-reference manifests for API route handlers ---
-    // Every route.js entry gets a route_client-reference-manifest.js whose payload is the
-    // app's ENTIRE client-module map (~640 KB each, 250+ routes ≈ 160 MB — two thirds of the
-    // handler). Route handlers render no client components, run no SSR, and use no server
-    // actions, and Next's tryLoadClientReferenceManifest (load-components.js) explicitly
-    // tolerates a missing file by returning undefined. Page manifests are named
-    // page_client-reference-manifest.js and are kept — pages genuinely need theirs.
-    // Verified 2026-09-11 by running `next start` with all route manifests deleted: route
-    // handlers and pages both behave identically.
+    // NOTE: onPostBuild runs AFTER Functions bundling has already zipped the handler (verified
+    // in the PR #75 deploy-preview log), so nothing removed here reaches the uploaded bundle —
+    // the strip that actually matters happens in scripts/strip-sharp-from-traces.js at the end
+    // of the build command, before @netlify/plugin-nextjs assembles the handler. This pass is
+    // kept as telemetry: it should report 0 files removed; a non-zero count means the
+    // build-command strip stopped working.
     let manifestBytes = 0;
     let manifestCount = 0;
     const stripRouteManifests = (dir) => {
