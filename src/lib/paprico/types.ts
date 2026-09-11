@@ -79,6 +79,10 @@ export interface PapricoGatingCriterion {
     criterion_id: string;
     enabled: boolean;
     lookahead_days: number | null; // null = default lookahead
+    /** Epic tiers this criterion pulls onto the agenda. Empty/null = the DB default. */
+    tiers: EpicTier[];
+    /** Time box stamped onto generated items; null leaves them unbudgeted. */
+    default_time_box_minutes: number | null;
     created_at?: string;
     updated_at?: string;
     /** Joined from criterion for display; null when the criterion was deleted. */
@@ -105,6 +109,38 @@ export interface AgendaItem extends PapricoItem {
     decision_count: number;
 }
 
+/**
+ * One epic's worth of agenda rows, collapsed into a single block.
+ *
+ * The agenda is generated per epic x gating criterion, so an epic with three
+ * open commercial criteria took three rows and read as three things to discuss.
+ * The 2026-09-18 run showed 78 rows against 48 epics for that reason. Grouping
+ * is a render concern only: decisions attach to `paprico_item`, so the items
+ * keep their identity inside the group and nothing about status, time boxes or
+ * decision capture moves up to the epic.
+ *
+ * Items with no epic (standing items, orphans) form single-item groups rather
+ * than being dropped or pooled together.
+ */
+export interface AgendaEpicGroup {
+    /** Stable render key: the epic id, or `item:<id>` for an epic-less item. */
+    key: string;
+    epic_id: string | null;
+    epic_name: string | null;
+    release_name: string | null;
+    tier: EpicTier | null;
+    owner_email: string | null;
+    /** Worst band across the group -- carried from its most urgent item. */
+    band: UrgencyBand | null;
+    stage_name: string | null;
+    stage_date: string | null; // YYYY-MM-DD
+    days_to_stage: number | null;
+    /** Summed time box for the group, and how many of its items carry none. */
+    time_box_minutes: number;
+    unbudgeted_item_count: number;
+    items: AgendaItem[];
+}
+
 /** An open commitment: a decision with an owner and due date, not yet complete. */
 export interface OpenCommitment extends PapricoDecision {
     item_title: string | null;
@@ -119,4 +155,13 @@ export interface PapricoAgenda {
     approaching: AgendaItem[];
     standing: AgendaItem[];
     total_time_box_minutes: number;
+    /**
+     * Items with no time box at all. Kept beside the total rather than folded
+     * into it: an unbudgeted item contributes zero minutes, so the total alone
+     * reads as spare capacity when it is really an unknown.
+     *
+     * Optional because agendas frozen into paprico_meeting.agenda_snapshot
+     * before this field existed are read back as-is.
+     */
+    unbudgeted_item_count?: number;
 }
