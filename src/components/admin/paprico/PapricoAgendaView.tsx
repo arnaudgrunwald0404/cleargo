@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import {
     Badge,
@@ -16,6 +16,7 @@ import {
     TextInput,
     Tooltip,
 } from "@mantine/core";
+import { UserDisplay } from "@/components/UserDisplay";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canRolesPerform } from "@/lib/permissions";
 import { formatDateOnlyForDisplay, getCalendarDateStringInTimeZone } from "@/lib/date-utils";
@@ -45,7 +46,16 @@ function BandBadge({ band }: { band: UrgencyBand | null }) {
     return <Badge variant="filled" color={s.color}>{s.label}</Badge>;
 }
 
-const EMPTY_STATE_TEXT = "Nothing approaching a stage with pricing, naming or forecast criteria open.";
+/** Column header style, matching LaunchChecklistTable and the epic criteria matrix. */
+const TH: CSSProperties = {
+    fontSize: "12px",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    color: "#6B7280",
+};
+
+const EMPTY_STATE_TEXT = "Nothing open.";
 
 type AgendaResponse = {
     meeting: PapricoMeeting;
@@ -78,6 +88,12 @@ export default function PapricoAgendaView() {
     const [standingDescription, setStandingDescription] = useState("");
     const [standingCategory, setStandingCategory] = useState("");
     const [standingSaving, setStandingSaving] = useState(false);
+    // Assignable people for the Accountable column. The agenda sync picks an
+    // owner (criterion decision owner -> epic owner -> none) but nothing could
+    // change it afterwards, so an item assigned to the wrong person stayed that
+    // way. /api/users is role-gated and may 403 for a chair, so a failure just
+    // leaves the column read-only rather than breaking the agenda.
+    const [assignableUsers, setAssignableUsers] = useState<Array<{ value: string; label: string }> | null>(null);
 
     const [publishOpen, setPublishOpen] = useState(false);
     const [slackBlock, setSlackBlock] = useState<string>("");
@@ -406,6 +422,27 @@ export default function PapricoAgendaView() {
     // to it rather than folding a guess into the number.
     const unbudgetedCount = agenda?.unbudgeted_item_count ?? 0;
 
+    useEffect(() => {
+        if (!canWrite) return;
+        let cancelled = false;
+        void fetch("/api/users", { credentials: "include" })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((body) => {
+                if (cancelled || !body?.users) return;
+                const opts = (body.users as Array<Record<string, unknown>>)
+                    .filter((u) => u.email && u.is_active !== false)
+                    .map((u) => {
+                        const name = [u.first_name, u.last_name].filter(Boolean).join(" ").trim();
+                        return { value: String(u.email), label: name || String(u.email) };
+                    });
+                setAssignableUsers(opts);
+            })
+            .catch(() => undefined);
+        return () => {
+            cancelled = true;
+        };
+    }, [canWrite]);
+
     if (loading) {
         return (
             <div className="flex justify-center py-16">
@@ -417,138 +454,173 @@ export default function PapricoAgendaView() {
     // `nested` = rendered inside an epic group, where the epic name, tier,
     // release and owner already sit on the group header. Repeating them on every
     // criterion row is what made one epic read as three separate topics.
-    const renderItemRow = (
+    // One row per criterion, in the column shape the launch checklist and the
+    // epic criteria matrix already use (LaunchChecklistTable.tsx). The agenda
+    // used to stack "label: value" lines per item, which is why it read as a
+    // wall of text next to every other criteria surface in the app.
+    const renderCriterionRow = (
         item: AgendaItem,
         section: AgendaItem[],
         draggable: boolean,
-        nested = false
+        opts: { nested?: boolean; groupBand?: UrgencyBand | null } = {}
     ) => {
+        const { nested = false, groupBand = null } = opts;
         const live = liveStatus[item.id];
         const status = live?.status ?? item.status;
+        const overdue = item.days_to_stage != null && item.days_to_stage < 0;
         return (
-            <div
+            <tr
                 key={item.id}
                 draggable={canWrite && draggable}
                 onDragStart={() => setDraggedItemId(item.id)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => void handleDrop(item.id, section)}
-                className={`border border-gray-200 rounded-lg px-4 py-3 bg-white hover:border-indigo-200 transition-colors ${
-                    canWrite && draggable ? "cursor-grab" : ""
-                }`}
+                className={`border-b border-gray-100 hover:bg-gray-50/60 ${canWrite && draggable ? "cursor-grab" : ""}`}
             >
-                <div className="flex flex-wrap items-center gap-2">
-                    <BandBadge band={item.band} />
-                    <button
-                        type="button"
-                        className="font-medium text-left text-gray-900 hover:text-indigo-700"
-                        onClick={() => setDetailItemId(item.id)}
-                    >
-                        {nested ? (item.criterion_label ?? item.title) : item.title}
-                    </button>
-                    {!nested && item.tier && (
-                        <Badge variant="outline" color="gray">{item.tier.replace("TIER_", "Tier ")}</Badge>
+                <td className="px-4 py-3">
+                    <div className={`flex items-start gap-2 ${nested ? "pl-4" : ""}`}>
+                        {(!nested || item.band !== groupBand) && <BandBadge band={item.band} />}
+                        <button
+                            type="button"
+                            className="text-sm text-left text-gray-900 hover:text-indigo-700"
+                            onClick={() => setDetailItemId(item.id)}
+                        >
+                            {nested ? (item.criterion_label ?? item.title) : item.title}
+                        </button>
+                        {item.orphaned && <Badge variant="light" color="orange">orphaned</Badge>}
+                    </div>
+                    {!nested && item.description && (
+                        <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{item.description}</p>
                     )}
-                    {item.orphaned && <Badge variant="light" color="orange">orphaned</Badge>}
-                    <span className="ml-auto flex items-center gap-2">
-                        <ItemStatusBadge status={status} />
-                    </span>
-                </div>
-                <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
-                    {!nested && item.release_name && <span>Release: {item.release_name}</span>}
-                    {!nested && item.criterion_label && <span>Criterion: {item.criterion_label}</span>}
-                    {item.stage_name && (
-                        <span>
-                            Stage: {item.stage_name} ({formatDateOnlyForDisplay(item.stage_date)})
-                        </span>
+                </td>
+
+                <td className="px-4 py-3 align-middle" style={{ width: "132px" }}>
+                    <ItemStatusBadge status={status} />
+                </td>
+
+                <td className="px-4 py-3 align-middle" style={{ width: "170px" }}>
+                    {canWrite && assignableUsers ? (
+                        <Select
+                            size="xs"
+                            searchable
+                            clearable
+                            placeholder="Unassigned"
+                            aria-label={"Accountable for " + item.title}
+                            data={assignableUsers}
+                            value={item.owner_email}
+                            onChange={(email) => {
+                                if (email !== (item.owner_email ?? null)) {
+                                    void patchItem(item.id, { owner_email: email });
+                                }
+                            }}
+                        />
+                    ) : item.owner_email ? (
+                        <UserDisplay email={item.owner_email} size="xs" />
+                    ) : (
+                        <span className="text-xs text-gray-300">Unassigned</span>
                     )}
-                    {item.days_to_stage != null && (
-                        <span>
-                            {item.days_to_stage < 0
-                                ? `${-item.days_to_stage}d past stage date`
-                                : `${item.days_to_stage}d to stage date`}
-                        </span>
+                </td>
+
+                <td className="px-4 py-3 align-middle text-xs" style={{ width: "180px" }}>
+                    {item.stage_date ? (
+                        <>
+                            <div className="text-gray-700">{formatDateOnlyForDisplay(item.stage_date)}</div>
+                            <div className={overdue ? "text-red-600" : "text-gray-400"}>
+                                {overdue
+                                    ? `${-(item.days_to_stage as number)}d overdue`
+                                    : `${item.days_to_stage}d out`}
+                            </div>
+                        </>
+                    ) : (
+                        // No target launch date on the epic, so no stage date derives.
+                        <span className="text-gray-300">no date</span>
                     )}
-                    {!nested && item.owner_email && <span>Owner: {item.owner_email}</span>}
-                </div>
-                {canWrite && (
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                        {status === "proposed" && (
-                            <Button size="compact-xs" variant="light" onClick={() => patchItem(item.id, { status: "on_agenda" })}>
-                                Add to agenda
-                            </Button>
-                        )}
-                        {status !== "deferred" && status !== "closed" && (
-                            <Button size="compact-xs" variant="subtle" color="yellow" onClick={() => patchItem(item.id, { status: "deferred" })}>
-                                Defer
-                            </Button>
-                        )}
-                        {status !== "blocked" && status !== "closed" && (
-                            <Button
-                                size="compact-xs"
-                                variant="subtle"
-                                color="red"
-                                onClick={() => {
-                                    const reason = window.prompt("What is this item blocked on?");
-                                    if (reason?.trim()) void patchItem(item.id, { status: "blocked", blocked_reason: reason.trim() });
-                                }}
-                            >
-                                Block
-                            </Button>
-                        )}
+                </td>
+
+                <td className="px-4 py-3 align-middle" style={{ width: "110px" }}>
+                    {canWrite ? (
                         <NumberInput
                             size="xs"
-                            w={110}
                             min={1}
                             max={480}
-                            placeholder="time box"
+                            placeholder="min"
                             aria-label={`Time box minutes for ${item.title}`}
                             defaultValue={item.time_box_minutes ?? ""}
                             onBlur={(e) => {
-                                const raw = e.currentTarget.value.replace(/[^\d]/g, "");
+                                const raw = e.currentTarget.value.replace(/[^0-9]/g, "");
                                 const minutes = raw ? Math.min(480, Math.max(1, parseInt(raw, 10))) : null;
                                 if (minutes !== (item.time_box_minutes ?? null)) {
                                     void patchItem(item.id, { time_box_minutes: minutes });
                                 }
                             }}
-                            suffix=" min"
                         />
-                    </div>
-                )}
-            </div>
+                    ) : (
+                        <span className="text-xs text-gray-500">
+                            {item.time_box_minutes ? `${item.time_box_minutes} min` : "—"}
+                        </span>
+                    )}
+                </td>
+
+                <td className="px-4 py-3 align-middle" style={{ width: "190px" }}>
+                    {canWrite && (
+                        <div className="flex flex-wrap items-center gap-1">
+                            {status === "proposed" && (
+                                <Button size="compact-xs" variant="light" onClick={() => patchItem(item.id, { status: "on_agenda" })}>
+                                    Add
+                                </Button>
+                            )}
+                            {status === "on_agenda" && (
+                                <Button size="compact-xs" variant="subtle" onClick={() => patchItem(item.id, { status: "proposed" })}>
+                                    Remove
+                                </Button>
+                            )}
+                            {(status === "deferred" || status === "blocked") && (
+                                <Button size="compact-xs" variant="subtle" onClick={() => patchItem(item.id, { status: "proposed" })}>
+                                    Reopen
+                                </Button>
+                            )}
+                            {status !== "deferred" && status !== "closed" && (
+                                <Button size="compact-xs" variant="subtle" color="yellow" onClick={() => patchItem(item.id, { status: "deferred" })}>
+                                    Defer
+                                </Button>
+                            )}
+                            {status !== "blocked" && status !== "closed" && (
+                                <Button
+                                    size="compact-xs"
+                                    variant="subtle"
+                                    color="red"
+                                    onClick={() => {
+                                        const reason = window.prompt("What is this item blocked on?");
+                                        if (reason?.trim()) void patchItem(item.id, { status: "blocked", blocked_reason: reason.trim() });
+                                    }}
+                                >
+                                    Block
+                                </Button>
+                            )}
+                        </div>
+                    )}
+                </td>
+            </tr>
         );
     };
 
-    // One epic, one block. The agenda is generated per epic x gating criterion,
-    // so an epic with three open commercial criteria used to take three
-    // top-level rows and read as three decisions to take.
-    const renderEpicGroup = (group: AgendaEpicGroup, section: AgendaItem[], draggable: boolean) => (
-        <div key={group.key} className="border border-gray-200 rounded-lg bg-white">
-            <div className="px-4 py-3 border-b border-gray-100">
+    /** Banner row introducing one epic's criteria. */
+    const renderEpicHeaderRow = (group: AgendaEpicGroup) => (
+        <tr key={`${group.key}-head`} className="bg-gray-50/80 border-b border-gray-100">
+            <td className="px-4 py-2" colSpan={6}>
                 <div className="flex flex-wrap items-center gap-2">
                     <BandBadge band={group.band} />
-                    <span className="font-medium text-gray-900">{agendaGroupTitle(group)}</span>
+                    <span className="font-medium text-sm text-gray-900">{agendaGroupTitle(group)}</span>
                     {group.tier && (
                         <Badge variant="outline" color="gray">{group.tier.replace("TIER_", "Tier ")}</Badge>
                     )}
-                    <Badge variant="light" color="gray">
-                        {group.items.length} open criteria
-                    </Badge>
+                    <span className="text-xs text-gray-500">
+                        {group.release_name}
+                        {group.items.length > 1 && ` · ${group.items.length} open criteria`}
+                    </span>
                 </div>
-                <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
-                    {group.release_name && <span>Release: {group.release_name}</span>}
-                    {group.owner_email && <span>Owner: {group.owner_email}</span>}
-                    {group.time_box_minutes > 0 && <span>{group.time_box_minutes} min boxed</span>}
-                    {group.unbudgeted_item_count > 0 && (
-                        <span>{group.unbudgeted_item_count} unbudgeted</span>
-                    )}
-                </div>
-            </div>
-            <div className="p-2">
-                <Stack gap="xs">
-                    {group.items.map((i) => renderItemRow(i, section, draggable, true))}
-                </Stack>
-            </div>
-        </div>
+            </td>
+        </tr>
     );
 
     const renderSection = (
@@ -566,22 +638,45 @@ export default function PapricoAgendaView() {
                 <Text fw={600} size="sm" mb={2}>{title}</Text>
                 <Text size="xs" c="dimmed" mb="xs">
                     {subtitle}
-                    {groups.length > 0 && groups.length !== items.length && (
-                        <> · {items.length} open criteria across {groups.length} releases</>
-                    )}
+                    {groups.length > 0 && <> · {items.length} criteria, {groups.length} epics</>}
                 </Text>
                 {items.length === 0 ? (
                     <div className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-lg px-4 py-3">
                         {emptyText}
                     </div>
                 ) : (
-                    <Stack gap="xs">
-                        {groups.map((g) =>
-                            g.epic_id && g.items.length > 1
-                                ? renderEpicGroup(g, items, draggable)
-                                : renderItemRow(g.items[0], items, draggable)
-                        )}
-                    </Stack>
+                    <div className="border border-gray-200 rounded-lg overflow-x-auto bg-white">
+                        <table className="w-full">
+                            <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
+                                <tr>
+                                    <th className="px-4 py-3 text-left font-medium" style={TH}>Criterion</th>
+                                    <th className="px-4 py-3 text-left font-medium" style={{ ...TH, width: "132px" }}>Status</th>
+                                    <th className="px-4 py-3 text-left font-medium" style={{ ...TH, width: "170px" }}>Accountable</th>
+                                    <th className="px-4 py-3 text-left font-medium" style={{ ...TH, width: "180px" }}>Ready by</th>
+                                    <th className="px-4 py-3 text-left font-medium" style={{ ...TH, width: "110px" }}>Time box</th>
+                                    <th className="px-4 py-3" style={{ ...TH, width: "190px" }} />
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {groups.map((g) => {
+                                    if (!g.epic_id) {
+                                        return renderCriterionRow(g.items[0], items, draggable);
+                                    }
+                                    return (
+                                        <Fragment key={g.key}>
+                                            {renderEpicHeaderRow(g)}
+                                            {g.items.map((i) =>
+                                                renderCriterionRow(i, items, draggable, {
+                                                    nested: true,
+                                                    groupBand: g.band,
+                                                })
+                                            )}
+                                        </Fragment>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
             </div>
         );
@@ -765,7 +860,7 @@ export default function PapricoAgendaView() {
                     <div>
                         <Text fw={600} size="sm" mb={2}>1. Open commitments</Text>
                         <Text size="xs" c="dimmed" mb="xs">
-                            Decisions with an owner and a due date, not yet complete — first on purpose.
+                            Owner and due date set, not yet complete.
                         </Text>
                         {agenda.open_commitments.length === 0 ? (
                             <div className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-lg px-4 py-3">
@@ -777,14 +872,14 @@ export default function PapricoAgendaView() {
                     </div>
                     {renderSection(
                         "2. Overdue and critical",
-                        "Release items whose stage date has passed or is inside 14 days.",
+                        "Stage date passed, or within 14 days.",
                         agenda.overdue_critical,
                         EMPTY_STATE_TEXT,
                         false
                     )}
                     {renderSection(
                         "3. Approaching",
-                        "Release-derived items inside the lookahead horizon.",
+                        "Inside the lookahead window.",
                         agenda.approaching,
                         EMPTY_STATE_TEXT,
                         false
@@ -799,14 +894,30 @@ export default function PapricoAgendaView() {
                             )}
                         </Group>
                         <Text size="xs" c="dimmed" mb="xs">
-                            The manually-added backlog — stays until explicitly closed. Drag to reorder.
+                            Added by hand. Stays until closed. Drag to reorder.
                         </Text>
                         {agenda.standing.length === 0 ? (
                             <div className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-lg px-4 py-3">
                                 None.
                             </div>
                         ) : (
-                            <Stack gap="xs">{agenda.standing.map((i) => renderItemRow(i, agenda.standing, true))}</Stack>
+                            <div className="border border-gray-200 rounded-lg overflow-x-auto bg-white">
+                                <table className="w-full">
+                                    <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
+                                        <tr>
+                                            <th className="px-4 py-3 text-left font-medium" style={TH}>Topic</th>
+                                            <th className="px-4 py-3 text-left font-medium" style={{ ...TH, width: "132px" }}>Status</th>
+                                            <th className="px-4 py-3 text-left font-medium" style={{ ...TH, width: "170px" }}>Accountable</th>
+                                            <th className="px-4 py-3 text-left font-medium" style={{ ...TH, width: "180px" }} />
+                                            <th className="px-4 py-3 text-left font-medium" style={{ ...TH, width: "110px" }}>Time box</th>
+                                            <th className="px-4 py-3" style={{ ...TH, width: "190px" }} />
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {agenda.standing.map((i) => renderCriterionRow(i, agenda.standing, true))}
+                                    </tbody>
+                                </table>
+                            </div>
                         )}
                     </div>
                 </Stack>
