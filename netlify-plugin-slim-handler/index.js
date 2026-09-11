@@ -84,8 +84,37 @@ module.exports = {
       // non-fatal
     }
 
+    // --- Remove client-reference manifests for API route handlers ---
+    // NOTE: onPostBuild runs AFTER Functions bundling has already zipped the handler (verified
+    // in the PR #75 deploy-preview log), so nothing removed here reaches the uploaded bundle —
+    // the strip that actually matters happens in scripts/strip-sharp-from-traces.js at the end
+    // of the build command, before @netlify/plugin-nextjs assembles the handler. This pass is
+    // kept as telemetry: it should report 0 files removed; a non-zero count means the
+    // build-command strip stopped working.
+    let manifestBytes = 0;
+    let manifestCount = 0;
+    const stripRouteManifests = (dir) => {
+      if (!fs.existsSync(dir)) return;
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          stripRouteManifests(full);
+        } else if (entry.isFile() && entry.name === 'route_client-reference-manifest.js') {
+          manifestBytes += fs.statSync(full).size;
+          manifestCount += 1;
+          fs.rmSync(full);
+        }
+      }
+    };
+    // Recurse the whole handler dir rather than assuming where the plugin version puts the
+    // .next output — the filename only ever occurs in Next server app output.
+    stripRouteManifests(handlerDir);
+    console.log(
+      `[slim-handler] Removed ${manifestCount} route_client-reference-manifest.js files (${mb(manifestBytes)})`
+    );
+
     // --- Remove Sharp and @img ---
-    let removed = 0;
+    let removed = manifestBytes;
     removed += removeIfExists(path.join(nodeModules, 'sharp'), 'sharp');
     const imgDir = path.join(nodeModules, '@img');
     if (fs.existsSync(imgDir)) {

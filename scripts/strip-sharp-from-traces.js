@@ -70,3 +70,72 @@ for (const filePath of nftFiles) {
 }
 
 console.log(`[strip-sharp] Done. Processed ${nftFiles.length} trace file(s). Removed ${totalRemoved} entries.`);
+
+/**
+ * Second pass: delete route_client-reference-manifest.js files from .next/server/app.
+ *
+ * Every route.js entry gets one of these carrying the app's ENTIRE client-module map
+ * (~640 KB each; 250+ API routes ≈ 160 MB — two thirds of the Netlify server handler, which
+ * is what pushed it past AWS Lambda's 250 MB cap and started failing production deploys with
+ * "Invalid AWS Lambda parameters"). Route handlers render no client components, run no SSR,
+ * and use no server actions; Next's tryLoadClientReferenceManifest (load-components.js)
+ * explicitly tolerates a missing file by returning undefined. Page manifests
+ * (page_client-reference-manifest.js) are kept — pages genuinely need theirs.
+ *
+ * This MUST happen here, in the build command, not in a plugin's onPostBuild:
+ * @netlify/plugin-nextjs assembles the handler and Functions bundling zips it BEFORE
+ * onPostBuild fires (verified in the PR #75 deploy-preview log, where the slim-handler
+ * plugin removed the files after "Functions bundling completed" — correct size, no effect).
+ *
+ * Verified 2026-09-11 by running `next start` with all route manifests deleted: route
+ * handlers and pages both behave identically.
+ */
+// output: 'standalone' means the build produces TWO server/app trees, each with its own full
+// set of manifests — .next/server/app AND .next/standalone/.next/server/app. The Netlify
+// handler is assembled from the standalone tree (proven by the PR #75 second preview, where
+// stripping only the outer tree logged success and the handler still carried all 256 files) —
+// so both trees must be cleaned.
+const serverAppDirs = [
+  path.join(nextDir, 'server', 'app'),
+  path.join(nextDir, 'standalone', '.next', 'server', 'app'),
+];
+let manifestCount = 0;
+let manifestBytes = 0;
+
+function stripRouteManifests(dir) {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      stripRouteManifests(full);
+    } else if (entry.isFile() && entry.name === 'route_client-reference-manifest.js') {
+      manifestBytes += fs.statSync(full).size;
+      manifestCount += 1;
+      fs.rmSync(full);
+    }
+  }
+}
+for (const dir of serverAppDirs) stripRouteManifests(dir);
+
+// Also drop any trace entries pointing at the now-deleted files, so nothing downstream
+// trips over a traced-but-missing path.
+let traceEntriesRemoved = 0;
+for (const filePath of nftFiles) {
+  try {
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    if (!Array.isArray(data.files)) continue;
+    const before = data.files.length;
+    data.files = data.files.filter((f) => !f.includes('route_client-reference-manifest.js'));
+    if (data.files.length !== before) {
+      fs.writeFileSync(filePath, JSON.stringify(data));
+      traceEntriesRemoved += before - data.files.length;
+    }
+  } catch {
+    // already warned about unreadable traces in the first pass
+  }
+}
+
+console.log(
+  `[strip-route-manifests] Deleted ${manifestCount} route_client-reference-manifest.js files ` +
+    `(${(manifestBytes / 1024 / 1024).toFixed(1)} MB) and ${traceEntriesRemoved} trace entries.`
+);
