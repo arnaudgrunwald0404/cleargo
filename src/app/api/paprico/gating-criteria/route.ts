@@ -25,7 +25,9 @@ async function getHandler(): Promise<NextResponse> {
     const [gatingRes, criteriaRes, settingsRes] = await Promise.all([
         sb
             .from('paprico_gating_criterion')
-            .select('criterion_id, enabled, lookahead_days, criterion:criterion(id, label, category, is_active)'),
+            .select(
+                'criterion_id, enabled, lookahead_days, tiers, default_time_box_minutes, criterion:criterion(id, label, category, is_active)'
+            ),
         sb
             .from('criterion')
             .select('id, label, category, is_active')
@@ -48,6 +50,8 @@ async function getHandler(): Promise<NextResponse> {
     });
 }
 
+const TIERS = ['TIER_1', 'TIER_2', 'TIER_3'] as const;
+
 const putSchema = z.object({
     entries: z
         .array(
@@ -55,6 +59,12 @@ const putSchema = z.object({
                 criterion_id: z.string().uuid(),
                 enabled: z.boolean(),
                 lookahead_days: z.number().int().min(1).max(365).nullable(),
+                // Per criterion, not one global floor: a criterion may be worth
+                // watching at Tier 3 while another is Tier 1/2 only. At least one
+                // tier is required — an empty scope reads as "all" and behaves as
+                // "none"; removing the criterion is how you turn it off.
+                tiers: z.array(z.enum(TIERS)).min(1).max(3).optional(),
+                default_time_box_minutes: z.number().int().min(1).max(480).nullable().optional(),
             })
         )
         .max(200)
@@ -84,6 +94,12 @@ async function putHandler(req: NextRequest): Promise<NextResponse> {
                     criterion_id: e.criterion_id,
                     enabled: e.enabled,
                     lookahead_days: e.lookahead_days,
+                    // Omitted tiers keep the column default on insert; on update
+                    // an explicit array is required to change the scope.
+                    ...(e.tiers ? { tiers: e.tiers } : {}),
+                    ...(e.default_time_box_minutes !== undefined
+                        ? { default_time_box_minutes: e.default_time_box_minutes }
+                        : {}),
                     updated_at: now,
                 })),
                 { onConflict: 'criterion_id' }

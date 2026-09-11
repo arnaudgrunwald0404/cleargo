@@ -1,14 +1,24 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Group, Loader, NumberInput, Select, Stack, Switch, Text } from "@mantine/core";
+import { Badge, Button, Chip, Group, Loader, NumberInput, Select, Stack, Switch, Text } from "@mantine/core";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canRolesPerform } from "@/lib/permissions";
+
+type Tier = "TIER_1" | "TIER_2" | "TIER_3";
+
+const ALL_TIERS: Tier[] = ["TIER_1", "TIER_2", "TIER_3"];
+const TIER_LABEL: Record<Tier, string> = { TIER_1: "Tier 1", TIER_2: "Tier 2", TIER_3: "Tier 3" };
+
+/** Matches the paprico_gating_criterion.tiers column default. */
+const DEFAULT_TIERS: Tier[] = ["TIER_1", "TIER_2"];
 
 type GatingRow = {
     criterion_id: string;
     enabled: boolean;
     lookahead_days: number | null;
+    tiers: Tier[] | null;
+    default_time_box_minutes: number | null;
     criterion: { id: string; label: string; category: string | null; is_active: boolean } | null;
 };
 
@@ -33,7 +43,13 @@ export default function PapricoGatingCriteriaSettings() {
             const res = await fetch("/api/paprico/gating-criteria");
             const body = await res.json();
             if (!res.ok) throw new Error(body.error || "Failed to load");
-            setRows(body.gating_criteria ?? []);
+            setRows(
+                (body.gating_criteria ?? []).map((r: GatingRow) => ({
+                    ...r,
+                    tiers: r.tiers?.length ? r.tiers : DEFAULT_TIERS,
+                    default_time_box_minutes: r.default_time_box_minutes ?? null,
+                }))
+            );
             setAvailable(body.available_criteria ?? []);
             setDefaultLookahead(body.default_lookahead_days ?? 60);
         } catch (e) {
@@ -63,6 +79,8 @@ export default function PapricoGatingCriteriaSettings() {
                 criterion_id: addCriterionId,
                 enabled: true,
                 lookahead_days: null,
+                tiers: DEFAULT_TIERS,
+                default_time_box_minutes: null,
                 criterion: criterion ? { ...criterion, is_active: true } : null,
             },
         ]);
@@ -82,6 +100,8 @@ export default function PapricoGatingCriteriaSettings() {
                         criterion_id: r.criterion_id,
                         enabled: r.enabled,
                         lookahead_days: r.lookahead_days,
+                        tiers: r.tiers?.length ? r.tiers : DEFAULT_TIERS,
+                        default_time_box_minutes: r.default_time_box_minutes,
                     })),
                     default_lookahead_days: defaultLookahead,
                 }),
@@ -112,7 +132,9 @@ export default function PapricoGatingCriteriaSettings() {
                 <Text fw={600} size="sm">Gating criteria</Text>
                 <Text size="xs" c="dimmed">
                     Which release criteria pull an item onto the PaPriCo agenda. Matched by criterion id —
-                    renaming or renumbering a criterion never breaks the report.
+                    renaming or renumbering a criterion never breaks the report. Tier scope is set per
+                    criterion, so a broad criterion can watch Tier 3 while a committee-level one stays on
+                    Tier 1 and 2.
                 </Text>
             </div>
 
@@ -180,6 +202,23 @@ export default function PapricoGatingCriteriaSettings() {
                                 }}
                                 suffix=" d"
                             />
+                            <NumberInput
+                                size="xs"
+                                w={160}
+                                min={1}
+                                max={480}
+                                placeholder="no time box"
+                                aria-label={`Default time box for ${row.criterion?.label ?? row.criterion_id}`}
+                                value={row.default_time_box_minutes ?? ""}
+                                disabled={!canWrite}
+                                onChange={(v) => {
+                                    const minutes = typeof v === "number" ? v : null;
+                                    setRows((prev) =>
+                                        prev.map((r, i) => (i === index ? { ...r, default_time_box_minutes: minutes } : r))
+                                    );
+                                }}
+                                suffix=" min"
+                            />
                             {canWrite && (
                                 <Button
                                     size="compact-xs"
@@ -190,6 +229,34 @@ export default function PapricoGatingCriteriaSettings() {
                                     Remove
                                 </Button>
                             )}
+                        </Group>
+                        <Group gap="xs" mt="xs" align="center">
+                            <Text size="xs" c="dimmed" w={70}>Tiers</Text>
+                            <Chip.Group
+                                multiple
+                                value={row.tiers ?? DEFAULT_TIERS}
+                                onChange={(value) => {
+                                    // An empty scope reads as "all tiers" and behaves as "none".
+                                    // Deselecting the last tier is a no-op; Remove turns it off.
+                                    const tiers = (value as Tier[]).filter((t) => ALL_TIERS.includes(t));
+                                    if (tiers.length === 0) return;
+                                    setRows((prev) =>
+                                        prev.map((r, i) =>
+                                            i === index
+                                                ? { ...r, tiers: ALL_TIERS.filter((t) => tiers.includes(t)) }
+                                                : r
+                                        )
+                                    );
+                                }}
+                            >
+                                <Group gap={6}>
+                                    {ALL_TIERS.map((tier) => (
+                                        <Chip key={tier} value={tier} size="xs" disabled={!canWrite}>
+                                            {TIER_LABEL[tier]}
+                                        </Chip>
+                                    ))}
+                                </Group>
+                            </Chip.Group>
                         </Group>
                     </div>
                 ))}

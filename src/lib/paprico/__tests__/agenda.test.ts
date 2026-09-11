@@ -1,12 +1,16 @@
 import {
+    agendaGroupTitle,
     appendSystemNote,
     autoCloseNote,
     commitmentAgeDays,
     compareAgendaItems,
     composeReleaseItemTitle,
     computeUrgencyBand,
+    DEFAULT_GATING_TIERS,
+    groupAgendaItemsByEpic,
     isCriterionStatusComplete,
     isOpenCommitment,
+    isTierInScope,
     isWithinLookahead,
     sectionForItem,
     totalTimeBoxMinutes,
@@ -143,6 +147,83 @@ describe('compareAgendaItems', () => {
     });
 });
 
+describe('groupAgendaItemsByEpic', () => {
+    it('collapses the criteria of one epic into a single block', () => {
+        // The shape that produced the 78-item agenda: 48 epics, several of them
+        // carrying three open commercial criteria each.
+        const groups = groupAgendaItemsByEpic([
+            agendaItem({ id: 'a', epic_id: 'e1', epic_name: 'Onboarding Beta', criterion_label: 'Packaging & Pricing Approved' }),
+            agendaItem({ id: 'b', epic_id: 'e1', epic_name: 'Onboarding Beta', criterion_label: 'Confirmed Pricing Communicated' }),
+            agendaItem({ id: 'c', epic_id: 'e2', epic_name: 'Talent Profile', criterion_label: 'Packaging & Pricing Approved' }),
+        ]);
+        expect(groups).toHaveLength(2);
+        expect(groups[0].epic_name).toBe('Onboarding Beta');
+        expect(groups[0].items.map((i) => i.id)).toEqual(['a', 'b']);
+        expect(groups[1].items.map((i) => i.id)).toEqual(['c']);
+    });
+
+    it('keeps every item exactly once', () => {
+        const items = [
+            agendaItem({ id: 'a', epic_id: 'e1' }),
+            agendaItem({ id: 'b', epic_id: 'e2' }),
+            agendaItem({ id: 'c', epic_id: 'e1' }),
+            agendaItem({ id: 'd', epic_id: null, source: 'standing' }),
+        ];
+        const flattened = groupAgendaItemsByEpic(items).flatMap((g) => g.items.map((i) => i.id));
+        expect(flattened.sort()).toEqual(['a', 'b', 'c', 'd']);
+    });
+
+    it('takes group order and band from the most urgent item, not from the epic', () => {
+        // Callers hand in a section already sorted by compareAgendaItems, so the
+        // first item for an epic is its worst one and the group inherits it.
+        const groups = groupAgendaItemsByEpic([
+            agendaItem({ id: 'a', epic_id: 'e1', band: 'overdue', stage_date: '2026-08-01' }),
+            agendaItem({ id: 'b', epic_id: 'e2', band: 'critical', stage_date: '2026-09-01' }),
+            agendaItem({ id: 'c', epic_id: 'e1', band: 'soon', stage_date: '2026-10-01' }),
+        ]);
+        expect(groups.map((g) => g.epic_id)).toEqual(['e1', 'e2']);
+        expect(groups[0].band).toBe('overdue');
+        expect(groups[0].stage_date).toBe('2026-08-01');
+    });
+
+    it('gives each epic-less item its own group rather than pooling them', () => {
+        const groups = groupAgendaItemsByEpic([
+            agendaItem({ id: 'a', epic_id: null, source: 'standing', title: 'Legacy credit conversion' }),
+            agendaItem({ id: 'b', epic_id: null, source: 'standing', title: 'Discount enforcement' }),
+        ]);
+        expect(groups).toHaveLength(2);
+        expect(groups.map((g) => g.key)).toEqual(['item:a', 'item:b']);
+    });
+
+    it('sums the group time box and counts what is unbudgeted', () => {
+        const groups = groupAgendaItemsByEpic([
+            agendaItem({ id: 'a', epic_id: 'e1', time_box_minutes: 10 }),
+            agendaItem({ id: 'b', epic_id: 'e1', time_box_minutes: 5 }),
+            agendaItem({ id: 'c', epic_id: 'e1', time_box_minutes: null }),
+        ]);
+        expect(groups[0].time_box_minutes).toBe(15);
+        expect(groups[0].unbudgeted_item_count).toBe(1);
+    });
+
+    it('returns no groups for no items', () => {
+        expect(groupAgendaItemsByEpic([])).toEqual([]);
+    });
+});
+
+describe('agendaGroupTitle', () => {
+    it('names a group by its epic', () => {
+        const [group] = groupAgendaItemsByEpic([agendaItem({ epic_name: 'Talent Profile' })]);
+        expect(agendaGroupTitle(group)).toBe('Talent Profile');
+    });
+
+    it('falls back to the item title when there is no epic name', () => {
+        const [group] = groupAgendaItemsByEpic([
+            agendaItem({ epic_id: null, epic_name: null, source: 'standing', title: 'Legacy credit conversion' }),
+        ]);
+        expect(agendaGroupTitle(group)).toBe('Legacy credit conversion');
+    });
+});
+
 describe('composeReleaseItemTitle', () => {
     it('joins epic and criterion', () => {
         expect(composeReleaseItemTitle('AI Notetaker', 'Packaging & Pricing Approved')).toBe(
@@ -250,13 +331,65 @@ describe('system notes and time boxes', () => {
         expect(appendSystemNote('earlier note', note)).toBe(`earlier note\n${note}`);
     });
 
-    it('totals time-boxed minutes ignoring unset boxes', () => {
+    it('totals time-boxed minutes and counts the unbudgeted ones separately', () => {
         expect(
             totalTimeBoxMinutes([
                 { time_box_minutes: 10 },
                 { time_box_minutes: null },
                 { time_box_minutes: 15 },
             ])
-        ).toBe(25);
+        ).toEqual({ minutes: 25, unbudgetedCount: 1 });
+    });
+
+    it('reports an all-unbudgeted agenda as zero minutes, not as spare capacity', () => {
+        // The live 2026-09-18 run: 85 items totalling 52 minutes of a 90 minute
+        // meeting, because a null box summed as zero. The count is what makes
+        // that legible.
+        const items = Array.from({ length: 85 }, (_, i) => ({
+            time_box_minutes: i < 5 ? 10 : null,
+        }));
+        expect(totalTimeBoxMinutes(items)).toEqual({ minutes: 50, unbudgetedCount: 80 });
+    });
+
+    it('returns a zeroed total for an empty agenda', () => {
+        expect(totalTimeBoxMinutes([])).toEqual({ minutes: 0, unbudgetedCount: 0 });
+    });
+});
+
+describe('isTierInScope', () => {
+    it('defaults to Tier 1 and Tier 2', () => {
+        expect(DEFAULT_GATING_TIERS).toEqual(['TIER_1', 'TIER_2']);
+        expect(isTierInScope('TIER_1', null)).toBe(true);
+        expect(isTierInScope('TIER_2', null)).toBe(true);
+        expect(isTierInScope('TIER_3', null)).toBe(false);
+    });
+
+    it('honours a per-criterion scope over the default', () => {
+        // Commercialization is plausibly worth watching at Tier 3; the SVP
+        // forecast review is not. One global floor cannot say both.
+        const broad = ['TIER_1', 'TIER_2', 'TIER_3'];
+        const narrow = ['TIER_1'];
+        expect(isTierInScope('TIER_3', broad)).toBe(true);
+        expect(isTierInScope('TIER_3', narrow)).toBe(false);
+        expect(isTierInScope('TIER_2', narrow)).toBe(false);
+        expect(isTierInScope('TIER_1', narrow)).toBe(true);
+    });
+
+    it('treats an empty scope as the default rather than as "no tiers"', () => {
+        expect(isTierInScope('TIER_1', [])).toBe(true);
+        expect(isTierInScope('TIER_3', [])).toBe(false);
+    });
+
+    it('skips epics with no tier', () => {
+        // An untiered epic has not been triaged, so it is out of scope for the
+        // committee agenda. Deliberate -- see the note on the function.
+        expect(isTierInScope(null, ['TIER_1', 'TIER_2', 'TIER_3'])).toBe(false);
+        expect(isTierInScope(undefined, null)).toBe(false);
+        expect(isTierInScope('', null)).toBe(false);
+    });
+
+    it('does not match an unrecognised tier value', () => {
+        expect(isTierInScope('TIER_0', null)).toBe(false);
+        expect(isTierInScope('tier_1', null)).toBe(false);
     });
 });

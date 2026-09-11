@@ -15,6 +15,8 @@ import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/server';
 import { getSlackClient } from '@/lib/slack/client';
+import { buildMcpBackedTools, actorForAgent } from '@/lib/ai/mcpTools';
+import type { ToolSet } from 'ai';
 
 function ensureKeys(): void {
   // Map CLAUDE_API_KEY → ANTHROPIC_API_KEY (Claude SDK convention)
@@ -70,8 +72,16 @@ Tool routing rules (follow these strictly):
 - "Who is blocking / delaying / ruining / holding up launches?" → get_accountability_report
 - "Who has unreviewed criteria?" → get_accountability_report
 - "What launches are at risk / show portfolio?" → get_team_overview
-- "What do I need to do?" → get_my_pending_actions
+- "What do I need to do?" → get-my-work (needs no arguments; it is scoped to the signed-in user)
 - "Is launch X ready?" → check_launch_readiness
+- "What is due soon / when is this due?" → get-my-work, which carries a derived dueDate per item
+- "Have I been reminded about this / did the nudge go out?" → get-my-notifications
+- To change a criterion status → update-criterion-status, never a direct write
+
+Two naming conventions are in play. Tools named with-hyphens come from the shared
+ClearGO tool registry and are the same ones available in Claude Desktop; prefer
+them. Tools named with_underscores are assistant-only helpers that have no
+registry equivalent.
 
 When responding:
 - Be concise and actionable — lead with the most important information
@@ -82,8 +92,15 @@ When responding:
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
 
-// ai v6: tool() uses inputSchema (renamed from parameters)
-function buildTools(userEmail: string) {
+/**
+ * Helpers with no equivalent in the shared registry: Slack pings, comment
+ * reading, and the portfolio/accountability rollups the assistant is prompted
+ * around. Anything that also makes sense from Claude Desktop belongs in the
+ * registry instead, not here.
+ *
+ * ai v6: tool() uses inputSchema (renamed from parameters).
+ */
+function buildAssistantOnlyTools(userEmail: string) {
   return {
     search_launches: tool({
       description:
@@ -195,67 +212,6 @@ function buildTools(userEmail: string) {
       },
     }),
 
-    get_my_pending_actions: tool({
-      description:
-        'Get criteria decisions that are unreviewed (NOT_SET only) for the current user or a specified person. CONDITIONAL criteria are acceptable and not included.',
-      inputSchema: z.object({
-        email: z
-          .string()
-          .optional()
-          .describe('Email of the person — omit to default to the current user'),
-      }),
-      execute: async ({ email }) => {
-        const supabase = createAdminClient();
-        const targetEmail = email || userEmail;
-
-        const { data: user } = await supabase
-          .from('app_user')
-          .select('id, first_name, last_name')
-          .eq('email', targetEmail)
-          .maybeSingle();
-
-        if (!user) return { error: `No user found with email: ${targetEmail}` };
-
-        const { data: pending } = await supabase
-          .from('epic_criterion_status')
-          .select(
-            `status, last_updated_at,
-             epic:epic_id (id, name, tier, target_launch_date, risk_level, archived),
-             criterion:criterion_id (label, category, gate)`
-          )
-          .eq('decision_owner_id', user.id)
-          .in('status', ['NOT_SET'])
-          .order('last_updated_at', { ascending: true });
-
-        const activePending = (pending || []).filter(
-          (p) => !(p.epic as any)?.archived && (p.epic as any)?.status !== 'Cancelled'
-        );
-
-        if (activePending.length === 0) {
-          const name =
-            [user.first_name, user.last_name].filter(Boolean).join(' ') || targetEmail;
-          return { message: `No pending criteria decisions for ${name}. All caught up!` };
-        }
-
-        return {
-          user: [user.first_name, user.last_name].filter(Boolean).join(' ') || targetEmail,
-          pendingCount: activePending.length,
-          items: activePending.map((p) => ({
-            criterion: (p.criterion as any)?.label,
-            category: (p.criterion as any)?.category,
-            isGate: (p.criterion as any)?.gate ?? false,
-            epicName: (p.epic as any)?.name,
-            epicTier: (p.epic as any)?.tier,
-            riskLevel: (p.epic as any)?.risk_level,
-            status: p.status,
-            daysSinceUpdate: Math.floor(
-              (Date.now() - new Date(p.last_updated_at).getTime()) / 86_400_000
-            ),
-            url: `${APP_URL}/epics/${(p.epic as any)?.id}`,
-          })),
-        };
-      },
-    }),
 
     get_team_overview: tool({
       description:
@@ -359,74 +315,6 @@ function buildTools(userEmail: string) {
       },
     }),
 
-    update_criterion_status: tool({
-      description:
-        'Update the status (GO, NO_GO, CONDITIONAL) of a specific criterion on a launch. Only call this when the user explicitly asks to mark or update a criterion. Requires the launch name and criterion label.',
-      inputSchema: z.object({
-        epic_name: z.string().describe('Name of the launch (fuzzy matched)'),
-        criterion_label: z.string().describe('Label of the criterion to update (fuzzy matched)'),
-        status: z.enum(['GO', 'NO_GO', 'CONDITIONAL']).describe('New status to set'),
-        notes: z.string().optional().describe('Optional notes or reason for the status change'),
-      }),
-      execute: async ({ epic_name, criterion_label, status, notes }) => {
-        const supabase = createAdminClient();
-
-        const { data: epic } = await supabase
-          .from('epic')
-          .select('id, name')
-          .ilike('name', `%${epic_name}%`)
-          .limit(1)
-          .maybeSingle();
-        if (!epic) return { error: `Launch not found: "${epic_name}"` };
-
-        const { data: user } = await supabase
-          .from('app_user')
-          .select('id')
-          .eq('email', userEmail)
-          .maybeSingle();
-        if (!user) return { error: `Could not find user: ${userEmail}` };
-
-        // Find the criterion_status row by joining through criterion label
-        const { data: rows } = await supabase
-          .from('epic_criterion_status')
-          .select('id, status, criterion:criterion_id (id, label)')
-          .eq('epic_id', epic.id);
-
-        const match = (rows || []).find((r) =>
-          (r.criterion as any)?.label?.toLowerCase().includes(criterion_label.toLowerCase())
-        );
-        if (!match) return { error: `Criterion "${criterion_label}" not found on "${epic.name}"` };
-
-        const updateData: Record<string, unknown> = {
-          status,
-          last_updated_at: new Date().toISOString(),
-          last_updated_by: user.id,
-        };
-        if (notes) updateData.current_status_notes = notes;
-
-        const { error } = await supabase
-          .from('epic_criterion_status')
-          .update(updateData)
-          .eq('id', match.id);
-
-        if (error) return { error: error.message };
-
-        try {
-          await supabase.from('audit_log').insert({
-            actor_id: user.id,
-            entity_type: 'epic_criterion_status',
-            entity_id: match.id,
-            json_diff: { status: { old: match.status, new: status } },
-          });
-        } catch {}
-
-        return {
-          success: true,
-          message: `Updated "${(match.criterion as any)?.label}" on "${epic.name}" to ${status}.`,
-          url: `${APP_URL}/epics/${epic.id}`,
-        };
-      },
-    }),
 
     get_launch_comments: tool({
       description:
@@ -806,6 +694,24 @@ function buildTools(userEmail: string) {
  * Run the agent and return a plain-text response.
  * Used by the Slack bot (app_mention, message.im).
  */
+/**
+ * Everything the assistant can do: the shared ClearGO registry (the same tools
+ * Claude Desktop gets, with the same capability gating) plus the assistant-only
+ * helpers above.
+ *
+ * Async because the actor's roles are read from app_user rather than assumed --
+ * a gated tool has to refuse the same way it would over OAuth.
+ */
+async function buildTools(userEmail: string): Promise<ToolSet> {
+  const supabase = createAdminClient();
+  const actor = await actorForAgent(supabase, userEmail);
+
+  return {
+    ...buildMcpBackedTools(supabase, actor),
+    ...buildAssistantOnlyTools(userEmail),
+  };
+}
+
 export async function runCleargoAgent(params: {
   message: string;
   userEmail?: string;
@@ -827,7 +733,7 @@ export async function runCleargoAgent(params: {
       model,
       system,
       prompt: message,
-      tools: buildTools(userEmail),
+      tools: await buildTools(userEmail),
       stopWhen: stepCountIs(5),
     });
     return text || "I couldn't generate a response — please try rephrasing.";
@@ -841,7 +747,7 @@ export async function runCleargoAgent(params: {
  * Return a streamText result for the in-app chat endpoint.
  * Call .toTextStreamResponse() on the result.
  */
-export function createCleargoAgentStream(params: {
+export async function createCleargoAgentStream(params: {
   messages: { role: 'user' | 'assistant'; content: string }[];
   userEmail?: string;
   contextEpicId?: string;
@@ -857,7 +763,7 @@ export function createCleargoAgentStream(params: {
     model,
     system,
     messages,
-    tools: buildTools(userEmail),
+    tools: await buildTools(userEmail),
     stopWhen: stepCountIs(5),
   });
 }

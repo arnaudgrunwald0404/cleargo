@@ -32,6 +32,23 @@ describe('MCP queries', () => {
   beforeEach(() => jest.clearAllMocks());
 
   describe('queryTeamMembers', () => {
+    const MANAGER = 'manager@clearcompany.com';
+
+    it('scopes the lookup to the manager it was given', async () => {
+      // Previously a module constant, so every caller got one particular
+      // manager's reports regardless of who was asking.
+      const mockFrom = jest.fn();
+      const membersChain = chainable();
+      membersChain.eq
+        .mockReturnValueOnce(membersChain)
+        .mockResolvedValueOnce({ data: [], error: null });
+      mockFrom.mockReturnValueOnce(membersChain);
+
+      await queryTeamMembers(buildMockSupabase(mockFrom), MANAGER);
+
+      expect(membersChain.eq).toHaveBeenCalledWith('manager_email', MANAGER);
+    });
+
     it('returns formatted team member list with epic counts', async () => {
       const members = [
         { id: 'u1', name: 'Alice', email: 'alice@co.com', role: 'PM', slack_handle: 'alice' },
@@ -54,7 +71,7 @@ describe('MCP queries', () => {
 
       mockFrom.mockReturnValueOnce(membersChain).mockReturnValueOnce(epicChain);
 
-      const result = await queryTeamMembers(buildMockSupabase(mockFrom));
+      const result = await queryTeamMembers(buildMockSupabase(mockFrom), MANAGER);
 
       expect(result).toHaveLength(2);
       expect(result[0]).toEqual(
@@ -73,7 +90,7 @@ describe('MCP queries', () => {
         .mockResolvedValueOnce({ data: [], error: null });
       mockFrom.mockReturnValueOnce(membersChain);
 
-      const result = await queryTeamMembers(buildMockSupabase(mockFrom));
+      const result = await queryTeamMembers(buildMockSupabase(mockFrom), MANAGER);
       expect(result).toEqual([]);
     });
   });

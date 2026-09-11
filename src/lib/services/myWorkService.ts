@@ -42,6 +42,7 @@ import {
     type LaunchHomeWork,
 } from '@/lib/services/launchHomeService';
 import type { HomeArtifact, HomeBrief, UnassignedGroup } from '@/lib/slack/templates/launch-home';
+import { computeReleaseAwareDueDates } from '@/lib/services/derivedCriterionDueDates';
 
 /** Shape the `my_items_for_user` RPC returns. */
 export interface MyItemRow {
@@ -83,6 +84,13 @@ export interface OwedCriterion {
     targetLaunchDate: string | null;
     /** True when the epic has shipped - the item survives, but it is post-launch. */
     postLaunch: boolean;
+    /**
+     * Stage-derived deadline, present only when the caller asked for it via
+     * `includeDerivedDueDates`. Undefined means "not computed", null means
+     * "computed and this item has no deadline" -- the two are not the same and
+     * callers rendering an overdue count need to tell them apart.
+     */
+    dueDate?: string | null;
     /** The full RPC row, so callers keep fields this type does not name. */
     raw: MyItemRow;
 }
@@ -103,7 +111,7 @@ export interface MyWork {
      * than silently showing zero. The Slack home tab already degraded this way;
      * this makes it part of the contract instead of each caller's problem.
      */
-    degraded: Partial<Record<'release' | 'launch' | 'briefs', string>>;
+    degraded: Partial<Record<'release' | 'launch' | 'briefs' | 'dueDates', string>>;
 }
 
 export interface GetMyWorkOptions {
@@ -112,6 +120,15 @@ export interface GetMyWorkOptions {
     includeLaunchSide?: boolean;
     /** Skip the Story Brief query. */
     includeStoryBriefs?: boolean;
+    /**
+     * Attach the release-schedule-derived due date to owed/blocked items.
+     *
+     * Off by default because it costs three extra queries and the Slack home tab
+     * does not render deadlines. `condition_due_date` alone is not a substitute:
+     * it only exists once someone has recorded a Conditional Go condition, so
+     * relying on it makes most items look undated.
+     */
+    includeDerivedDueDates?: boolean;
     today?: string;
 }
 
@@ -270,5 +287,36 @@ export async function getMyWork(email: string, opts: GetMyWorkOptions = {}): Pro
         result.degraded.briefs = reasonOf(briefs);
     }
 
+    if (opts.includeDerivedDueDates) {
+        // Degrades like the sections above rather than failing the whole answer:
+        // knowing what you owe without the deadline still beats an error.
+        try {
+            await attachDueDates([...result.owed, ...result.blocked], supabase);
+        } catch (err) {
+            result.degraded.dueDates =
+                err instanceof Error ? err.message : String(err);
+        }
+    }
+
     return result;
+}
+
+/** Mutates in place -- owed and blocked hold the same object references. */
+async function attachDueDates(items: OwedCriterion[], supabase: SupabaseClient): Promise<void> {
+    if (items.length === 0) return;
+
+    const dueById = await computeReleaseAwareDueDates(
+        supabase,
+        items.map((item) => ({
+            id: item.id,
+            epicId: item.epicId,
+            conditionDueDate: item.conditionDueDate,
+            ratingTiming: (item.raw.criterion?.rating_timing ?? null) as number | string | null,
+            isGate: item.gate,
+        }))
+    );
+
+    for (const item of items) {
+        item.dueDate = dueById.get(item.id) ?? null;
+    }
 }

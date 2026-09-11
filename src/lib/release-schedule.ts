@@ -42,8 +42,12 @@ export async function upsertReleaseScheduleRow(
 }
 
 /** Active release-train rows (`context = release`, not archived) for GA dates and epics UI. */
-export async function getActiveReleaseScheduleRows(): Promise<ReleaseScheduleRow[]> {
-  const supabase = createClient();
+export async function getActiveReleaseScheduleRows(
+  client?: SupabaseClient
+): Promise<ReleaseScheduleRow[]> {
+  // Callers outside a request (MCP tools, background jobs) must pass a client:
+  // the default is cookie-backed and authenticates as anon for them.
+  const supabase = client ?? createClient();
 
   let query = supabase
     .from('release_schedule')

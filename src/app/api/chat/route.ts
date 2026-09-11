@@ -45,7 +45,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: 'messages array is required' }, { status: 400 });
   }
 
-  const result = createCleargoAgentStream({
+  const result = await createCleargoAgentStream({
     messages,
     userEmail,
     contextEpicId: context?.epic_id,

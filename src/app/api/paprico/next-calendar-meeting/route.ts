@@ -40,6 +40,10 @@ async function getHandler(req: NextRequest): Promise<NextResponse> {
         return NextResponse.json({
             found: false,
             reason: message.includes(' 403 ') ? 'calendar_access_denied' : 'lookup_failed',
+            // Google's error text, truncated — surfaced to admins in the UI so
+            // config problems diagnose themselves instead of hiding behind a
+            // missing banner.
+            detail: message.slice(0, 300),
         });
     }
 }

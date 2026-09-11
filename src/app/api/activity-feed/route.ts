@@ -46,22 +46,8 @@ function normalizeActor(actor: any): ActivityFeedItem['actor'] | undefined {
 }
 
 export async function GET(req: NextRequest) {
-    // #region agent log
-    const fs = require('fs');
-    const logEntry1 = {location:'activity-feed/route.ts:47',message:'GET activity-feed called',data:{url:req.url,hasCookies:req.cookies.getAll().length>0,cookieNames:req.cookies.getAll().map(c=>c.name)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
-    try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry1) + '\n'); } catch(e) {}
-    // #endregion
     try {
-        // #region agent log
-        const envCheck = {hasSupabaseUrl:!!process.env.NEXT_PUBLIC_SUPABASE_URL,hasPublishableKey:!!process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,hasAnonKey:!!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY};
-        const logEntry2 = {location:'activity-feed/route.ts:50',message:'Before createClient - env check',data:envCheck,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
-        try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry2) + '\n'); } catch(e) {}
-        // #endregion
         const supabase = createClient();
-        // #region agent log
-        const logEntry3 = {location:'activity-feed/route.ts:52',message:'After createClient - before getUser',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
-        try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry3) + '\n'); } catch(e) {}
-        // #endregion
         // Check authentication (supports both Supabase auth and magic link)
         const userEmail = await getAuthenticatedUserEmail();
         if (!userEmail) {

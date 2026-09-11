@@ -3,6 +3,7 @@
  * Handles success metrics, epic configs, scorecards, and retros
  */
 import { createClient } from '@/lib/supabase/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { 
   SuccessMetric, 
   CreateSuccessMetricDTO,
@@ -345,8 +346,11 @@ export async function resolveProductManagerUserId(epicId: string): Promise<strin
   return null;
 }
 
-export async function getEpicSuccessConfig(epicId: string): Promise<EpicSuccessConfigWithDetails | null> {
-  const supabase = createClient();
+export async function getEpicSuccessConfig(epicId: string, client?: SupabaseClient): Promise<EpicSuccessConfigWithDetails | null> {
+  // Optional client: the default is cookie-backed and reads as anon from an
+  // MCP tool or a job, which RLS turns into an empty result rather than an
+  // error -- a silent wrong answer.
+  const supabase = client ?? createClient();
   
   try {
     // Try with relationship syntax first
@@ -647,8 +651,11 @@ export interface EpicSuccessMetricWithDetails extends EpicSuccessMetric {
   metric?: SuccessMetric;
 }
 
-export async function getEpicSuccessMetrics(epicId: string): Promise<EpicSuccessMetricWithDetails[]> {
-  const supabase = createClient();
+export async function getEpicSuccessMetrics(epicId: string, client?: SupabaseClient): Promise<EpicSuccessMetricWithDetails[]> {
+  // Optional client: the default is cookie-backed and reads as anon from an
+  // MCP tool or a job, which RLS turns into an empty result rather than an
+  // error -- a silent wrong answer.
+  const supabase = client ?? createClient();
   
   try {
     // Try the join query first with explicit foreign key syntax
@@ -922,8 +929,11 @@ export async function updateEpicSuccessMetric(
 // Epic Scorecards
 // ============================================================================
 
-export async function getEpicScorecards(epicId: string, limit?: number): Promise<EpicScorecard[]> {
-  const supabase = createClient();
+export async function getEpicScorecards(epicId: string, limit?: number, client?: SupabaseClient): Promise<EpicScorecard[]> {
+  // Optional client: the default is cookie-backed and reads as anon from an
+  // MCP tool or a job, which RLS turns into an empty result rather than an
+  // error -- a silent wrong answer.
+  const supabase = client ?? createClient();
   let query = supabase
     .from('epic_scorecards')
     .select('*')
@@ -1005,8 +1015,11 @@ export interface EpicRetroWithSubmitter extends EpicRetro {
   };
 }
 
-export async function getEpicRetros(epicId: string): Promise<EpicRetroWithSubmitter[]> {
-  const supabase = createClient();
+export async function getEpicRetros(epicId: string, client?: SupabaseClient): Promise<EpicRetroWithSubmitter[]> {
+  // Optional client: the default is cookie-backed and reads as anon from an
+  // MCP tool or a job, which RLS turns into an empty result rather than an
+  // error -- a silent wrong answer.
+  const supabase = client ?? createClient();
   const { data, error } = await supabase
     .from('epic_retros')
     .select(`

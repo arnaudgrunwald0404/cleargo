@@ -1,4 +1,5 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { CreateEpicDTO, Epic } from '@/types/epics';
 import {
     computeEpicReleaseStatus,
@@ -7,6 +8,7 @@ import {
 } from '@/lib/epic-release-status';
 import { getActiveReleaseScheduleRows } from '@/lib/release-schedule';
 import { createGtmAccessPhaseResolver } from '@/lib/gtm-phase';
+import { getReleaseNameFromAhaFields } from '@/lib/criterion-due-date';
 
 export async function instantiateEpicMatrix(epicId: string, tier: string) {
     const supabase = createClient();
@@ -438,8 +440,10 @@ export async function getEpics() {
     }
 }
 
-export async function getEpic(id: string) {
-    const supabase = createClient();
+export async function getEpic(id: string, client?: SupabaseClient) {
+    // See getActiveReleaseScheduleRows: the default client is cookie-backed, so
+    // an MCP tool or a job that does not pass one reads as anon.
+    const supabase = client ?? createClient();
 
     const { data, error } = await supabase
         .from('epic')
@@ -467,7 +471,7 @@ export async function getEpic(id: string) {
         day_marker: r.day_marker,
         status: r.status ?? 'PENDING',
     }));
-    const releaseSchedule = await getActiveReleaseScheduleRows();
+    const releaseSchedule = await getActiveReleaseScheduleRows(client);
 
     const epicForStatus: EpicForStatus = {
         id: data.id,
@@ -599,3 +603,79 @@ export async function deleteEpic(id: string) {
     }
 }
 
+/**
+ * Find epics by name and a few coarse filters.
+ *
+ * Nothing here existed: getEpics() is "every non-archived epic, no arguments, no
+ * pagination" and every caller filters client-side, so there was no way to turn
+ * "the Reporting release" into an id server-side. That is fine for a page that
+ * already holds the whole list in memory and useless for a tool.
+ *
+ * Takes an explicit client so callers outside a request are not silently anon.
+ *
+ * Two honest limits:
+ * - `status` filters the STORED column. The status the app displays is derived
+ *   (see computeEpicReleaseStatus), so a stored value can disagree with what a
+ *   user sees. getEpic returns the derived one.
+ * - `releaseName` lives inside `aha_fields`, not a column, so it is applied in
+ *   TypeScript after a wider read rather than in SQL.
+ */
+export interface FindEpicsFilters {
+    /** Case-insensitive substring match on name. */
+    nameQuery?: string;
+    status?: string;
+    tier?: string;
+    ownerEmail?: string;
+    releaseName?: string;
+    limit?: number;
+    includeArchived?: boolean;
+}
+
+export async function findEpics(supabase: SupabaseClient, filters: FindEpicsFilters = {}) {
+    const limit = Math.min(Math.max(filters.limit ?? 25, 1), 100);
+
+    let query = supabase
+        .from('epic')
+        .select('id, name, status, tier, target_launch_date, readiness_score, owner_email, aha_fields, archived')
+        .order('target_launch_date', { ascending: true, nullsFirst: false });
+
+    if (!filters.includeArchived) {
+        query = query.or('archived.is.null,archived.eq.false');
+    }
+    if (filters.nameQuery?.trim()) {
+        // Escape PostgREST's wildcards so a literal % or _ in a name does not
+        // silently widen the search.
+        const safe = filters.nameQuery.trim().replace(/[%_]/g, (c) => `\\${c}`);
+        query = query.ilike('name', `%${safe}%`);
+    }
+    if (filters.status?.trim()) query = query.eq('status', filters.status.trim());
+    if (filters.tier?.trim()) query = query.eq('tier', filters.tier.trim());
+    if (filters.ownerEmail?.trim()) query = query.ilike('owner_email', filters.ownerEmail.trim());
+
+    // Release is a post-filter, so read a wider window before trimming or the
+    // limit would apply to rows that are about to be discarded.
+    const wanted = filters.releaseName?.trim() ? Math.max(limit * 10, 200) : limit;
+    const { data, error } = await query.limit(wanted);
+
+    if (error) throw error;
+
+    let rows = data ?? [];
+
+    if (filters.releaseName?.trim()) {
+        const target = filters.releaseName.trim().toLowerCase();
+        rows = rows.filter(
+            (r) => (getReleaseNameFromAhaFields(r.aha_fields) ?? '').toLowerCase() === target
+        );
+    }
+
+    return rows.slice(0, limit).map((r) => ({
+        id: r.id as string,
+        name: r.name as string,
+        status: r.status as string | null,
+        tier: r.tier as string | null,
+        targetLaunchDate: (r.target_launch_date as string | null) ?? null,
+        readinessScore: (r.readiness_score as number | null) ?? null,
+        ownerEmail: (r.owner_email as string | null) ?? null,
+        releaseName: getReleaseNameFromAhaFields(r.aha_fields),
+    }));
+}

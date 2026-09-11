@@ -4,6 +4,7 @@
  */
 
 import { getClient } from '@/lib/db';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { parseDateOnlyLocal } from '@/lib/date-utils';
 import {
   computeCriterionDueDateYmd,
@@ -97,9 +98,10 @@ function getGADate(epic: { scheduled_ga_dev_date?: string | null; target_launch_
  * - At least 1 metric exists in epic_success_metrics
  */
 export async function getSuccessPlanCompletionRate(
-  filters?: AnalyticsFilters
+  filters?: AnalyticsFilters,
+  client?: SupabaseClient
 ): Promise<SuccessPlanCompletionRate> {
-  const supabase = getClient();
+  const supabase = client ?? getClient();
 
   // Build base query for epics with success configs
   let epicQuery = supabase
@@ -288,8 +290,8 @@ function computeDueDateFromStages(
 /**
  * Fetch release_stages once (small table). Reuse across many criterion due-date calculations.
  */
-async function fetchReleaseStages(): Promise<ReleaseStageRow[]> {
-  const supabase = getClient();
+async function fetchReleaseStages(client?: SupabaseClient): Promise<ReleaseStageRow[]> {
+  const supabase = client ?? getClient();
   const { data, error } = await supabase
     .from('release_stages')
     .select('id, name, sort_order, duration_days, scope, level_durations, is_gate')
@@ -321,9 +323,10 @@ export interface CriteriaOnTimeStats {
  * - Median days late for late criteria
  */
 export async function getCriteriaOnTimeRate(
-  filters?: AnalyticsFilters
+  filters?: AnalyticsFilters,
+  client?: SupabaseClient
 ): Promise<CriteriaOnTimeStats> {
-  const supabase = getClient();
+  const supabase = client ?? getClient();
 
   // Build query for epics
   let epicQuery = supabase
@@ -364,7 +367,7 @@ export async function getCriteriaOnTimeRate(
         )
       `)
       .in('epic_id', epicIds),
-    fetchReleaseStages(),
+    fetchReleaseStages(client),
   ]);
 
   const { data: statuses, error: statusesError } = statusesResult;
@@ -535,9 +538,10 @@ type EpicWithRetros = {
 };
 
 export async function getRetroCompletionRate(
-  filters?: AnalyticsFilters
+  filters?: AnalyticsFilters,
+  client?: SupabaseClient
 ): Promise<RetroCompletionRate> {
-  const supabase = getClient();
+  const supabase = client ?? getClient();
 
   // Fetch epics and retros separately: PostgREST may not expose an embed path from
   // `epic` → `epic_retros` (PGRST200) even when `epic_retros.epic_id` references `epic.id`.
@@ -831,8 +835,8 @@ function computeHygieneScoreFromStatuses(statuses: HygieneStatusRow[]): number {
   return Math.round(hygieneScore * 100) / 100;
 }
 
-export async function calculateLaunchHygieneScore(epicId: string): Promise<number> {
-  const supabase = getClient();
+export async function calculateLaunchHygieneScore(epicId: string, client?: SupabaseClient): Promise<number> {
+  const supabase = client ?? getClient();
   const { data: statuses, error } = await supabase
     .from('epic_criterion_status')
     .select(`
@@ -865,9 +869,10 @@ export interface LaunchHygieneDistribution {
  * Get launch hygiene distribution across all eligible epics
  */
 export async function getLaunchHygieneDistribution(
-  filters?: AnalyticsFilters
+  filters?: AnalyticsFilters,
+  client?: SupabaseClient
 ): Promise<LaunchHygieneDistribution> {
-  const supabase = getClient();
+  const supabase = client ?? getClient();
 
   // Build query for epics
   let epicQuery = supabase
@@ -1085,10 +1090,10 @@ export interface PMTimelinessStats {
   total: number;
 }
 
-async function getPMOwnedItems(epicId: string, releaseStages?: ReleaseStageRow[] | null): Promise<PMOwnedItem[]> {
-  const supabase = getClient();
+async function getPMOwnedItems(epicId: string, releaseStages?: ReleaseStageRow[] | null, client?: SupabaseClient): Promise<PMOwnedItem[]> {
+  const supabase = client ?? getClient();
   const items: PMOwnedItem[] = [];
-  const stages = releaseStages ?? await fetchReleaseStages();
+  const stages = releaseStages ?? await fetchReleaseStages(client);
 
   const { data: epic } = await supabase
     .from('epic')
@@ -1317,9 +1322,10 @@ function categorizeTimeliness(daysFromDue: number | null, isCompleted: boolean):
 
 export async function calculatePMTimelinessIndex(
   pmEmail: string,
-  filters?: AnalyticsFilters
+  filters?: AnalyticsFilters,
+  client?: SupabaseClient
 ): Promise<number> {
-  const supabase = getClient();
+  const supabase = client ?? getClient();
 
   const { data: pmUser } = await supabase
     .from('app_user')
@@ -1353,10 +1359,10 @@ export async function calculatePMTimelinessIndex(
     return 0;
   }
 
-  const releaseStages = await fetchReleaseStages();
+  const releaseStages = await fetchReleaseStages(client);
   const allItems: PMOwnedItem[] = [];
   for (const epic of epics) {
-    const items = await getPMOwnedItems(epic.id, releaseStages);
+    const items = await getPMOwnedItems(epic.id, releaseStages, client);
     allItems.push(...items);
   }
 
@@ -1394,9 +1400,10 @@ export async function calculatePMTimelinessIndex(
 }
 
 export async function getPMTimelinessByPM(
-  filters?: AnalyticsFilters
+  filters?: AnalyticsFilters,
+  client?: SupabaseClient
 ): Promise<PMTimelinessStats[]> {
-  const supabase = getClient();
+  const supabase = client ?? getClient();
 
   const { data: pmUsers } = await supabase
     .from('app_user')
@@ -1430,7 +1437,7 @@ export async function getPMTimelinessByPM(
   }
 
   const epicMap = new Map(epics.map(e => [e.id, e]));
-  const releaseStages = await fetchReleaseStages();
+  const releaseStages = await fetchReleaseStages(client);
   const results: PMTimelinessStats[] = [];
 
   for (const pmUser of pmUsers) {
@@ -1445,7 +1452,7 @@ export async function getPMTimelinessByPM(
       const epicPMUserId = await resolveProductManagerUserId(epic.id);
       
       if (epicPMUserId === pmUser.id) {
-        const items = await getPMOwnedItems(epic.id, releaseStages);
+        const items = await getPMOwnedItems(epic.id, releaseStages, client);
         allItems.push(...items);
         const pod = epicMap.get(epic.id)?.pod || 'Unknown';
         podSet.add(pod);

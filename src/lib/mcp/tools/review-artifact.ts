@@ -9,7 +9,7 @@
 import { z } from 'zod/v3';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { McpAuthInfo } from '@/lib/oauth/tokens';
-import { canRolesPerform } from '@/lib/permissions';
+import { actorCan } from '@/lib/permissions-server';
 import { markLaunchCriterionDone } from '@/lib/artifacts/criterionCompletion';
 
 export const InputSchema = z.object({
@@ -41,7 +41,7 @@ export async function reviewArtifact(
   const needed = parsed.data.status === 'APPROVED'
     ? 'launchArtifact.approve'
     : 'launchArtifact.review';
-  if (!canRolesPerform(actor.roles, needed)) {
+  if (!(await actorCan(actor, needed, supabase))) {
     return {
       error: parsed.data.status === 'APPROVED'
         ? 'You do not have permission to approve launch artifacts.'

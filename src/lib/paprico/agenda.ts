@@ -1,5 +1,6 @@
 import { diffCalendarDaysBetweenYmd } from '@/lib/date-utils';
 import type {
+    AgendaEpicGroup,
     AgendaItem,
     PapricoDecisionType,
     UrgencyBand,
@@ -52,6 +53,65 @@ export function compareAgendaItems(a: AgendaItem, b: AgendaItem): number {
     const tierB = b.tier ? (TIER_RANK[b.tier] ?? 9) : 9;
     if (tierA !== tierB) return tierA - tierB;
     return a.title.localeCompare(b.title);
+}
+
+/**
+ * Collapse a sorted section into one block per epic.
+ *
+ * Order is taken from the incoming items, which the caller has already sorted
+ * with compareAgendaItems: an epic lands where its most urgent item put it, and
+ * the items inside the group keep that same relative order. Sorting the groups
+ * again here would be a second, quieter ordering rule to keep in step with the
+ * first.
+ *
+ * Every item comes back out exactly once. An item with no epic is its own
+ * single-item group -- pooling standing items under one "no epic" heading would
+ * merge unrelated topics into a single block.
+ */
+export function groupAgendaItemsByEpic(items: AgendaItem[]): AgendaEpicGroup[] {
+    const groups: AgendaEpicGroup[] = [];
+    const byEpic = new Map<string, AgendaEpicGroup>();
+
+    for (const item of items) {
+        const existing = item.epic_id ? byEpic.get(item.epic_id) : undefined;
+        if (existing) {
+            existing.items.push(item);
+            if (item.time_box_minutes == null) existing.unbudgeted_item_count += 1;
+            else existing.time_box_minutes += item.time_box_minutes;
+            continue;
+        }
+
+        // The first item for an epic is also its most urgent one, so the group
+        // header is simply that item's band and stage.
+        const group: AgendaEpicGroup = {
+            key: item.epic_id ?? `item:${item.id}`,
+            epic_id: item.epic_id,
+            epic_name: item.epic_name,
+            release_name: item.release_name,
+            tier: item.tier,
+            owner_email: item.owner_email,
+            band: item.band,
+            stage_name: item.stage_name,
+            stage_date: item.stage_date,
+            days_to_stage: item.days_to_stage,
+            time_box_minutes: item.time_box_minutes ?? 0,
+            unbudgeted_item_count: item.time_box_minutes == null ? 1 : 0,
+            items: [item],
+        };
+        groups.push(group);
+        if (item.epic_id) byEpic.set(item.epic_id, group);
+    }
+
+    return groups;
+}
+
+/**
+ * What a grouped row is called: the epic name for a real group, and the item's
+ * own title when there is no epic to name it by (standing items, orphans).
+ */
+export function agendaGroupTitle(group: AgendaEpicGroup): string {
+    if (group.epic_name?.trim()) return group.epic_name.trim();
+    return group.items[0]?.title ?? 'Untitled item';
 }
 
 export function composeReleaseItemTitle(
@@ -139,8 +199,43 @@ export function sectionForItem(item: Pick<AgendaItem, 'source' | 'band'>): 'over
     return 'approaching';
 }
 
-export function totalTimeBoxMinutes(items: Array<{ time_box_minutes: number | null }>): number {
-    return items.reduce((sum, i) => sum + (i.time_box_minutes ?? 0), 0);
+/**
+ * Sum of the item time boxes, plus how many items carry no box at all.
+ *
+ * The count is not decoration: an unbudgeted item used to total as zero, so an
+ * agenda of 85 items reported 52 minutes against a 90 minute meeting and read
+ * as spare capacity. The caller renders both numbers so the gap is visible.
+ */
+export function totalTimeBoxMinutes(
+    items: Array<{ time_box_minutes: number | null }>
+): { minutes: number; unbudgetedCount: number } {
+    let minutes = 0;
+    let unbudgetedCount = 0;
+    for (const item of items) {
+        if (item.time_box_minutes == null) unbudgetedCount += 1;
+        else minutes += item.time_box_minutes;
+    }
+    return { minutes, unbudgetedCount };
+}
+
+/** Tier scope applied to a gating criterion that has none configured. */
+export const DEFAULT_GATING_TIERS: readonly string[] = ['TIER_1', 'TIER_2'];
+
+/**
+ * Whether a gating criterion pulls an epic of this tier onto the agenda.
+ *
+ * A null tier is out of scope: an untiered epic has not been triaged, and the
+ * point of the filter is to bound what the committee is asked to look at.
+ * Untiered epics with a real commercial gap are therefore invisible here --
+ * see the PR note; the fix belongs in epic triage, not in this filter.
+ */
+export function isTierInScope(
+    epicTier: string | null | undefined,
+    criterionTiers: readonly string[] | null | undefined
+): boolean {
+    if (!epicTier) return false;
+    const scope = criterionTiers?.length ? criterionTiers : DEFAULT_GATING_TIERS;
+    return scope.includes(epicTier);
 }
 
 /** System note appended when a criterion flips complete and the item auto-closes. */

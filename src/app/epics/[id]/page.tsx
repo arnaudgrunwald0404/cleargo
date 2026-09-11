@@ -3,7 +3,7 @@ import { useEffect, useState, useRef, useCallback, useMemo, lazy, Suspense } fro
 import { Epic } from "@/types/epics";
 import { LaunchHoldBanner, type LaunchHoldInfo } from "@/components/LaunchHoldBadge";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMediaQuery } from "@mantine/hooks";
 import Matrix from "@/components/Matrix";
 import { createClient } from "@/lib/supabase/client";
@@ -62,6 +62,8 @@ export default function EpicDetailPage() {
 
     const params = useParams();
     const id = params?.id as string | undefined;
+    const router = useRouter();
+    const searchParams = useSearchParams();
     const { flags: featureFlags } = useFeatureFlags();
 
     if (!id) {
@@ -103,7 +105,10 @@ export default function EpicDetailPage() {
     const [filterOverdue, setFilterOverdue] = useState(false);
     const [filterDueSoon, setFilterDueSoon] = useState(false);
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
-    const [activeTab, setActiveTab] = useState<string>('readiness');
+    // Initialized from ?tab= so a direct link (e.g. .../epics/[id]?tab=forecast) opens straight
+    // into that tab. handleTabChange (below, once epic/tabOptions are in scope) keeps the URL in
+    // sync as the user switches tabs, so the current tab is always shareable/bookmarkable.
+    const [activeTab, setActiveTab] = useState<string>(() => searchParams.get('tab') || 'readiness');
     const [hasTalkTrackVideo, setHasTalkTrackVideo] = useState(false);
     const [readinessThreshold, setReadinessThreshold] = useState<number | null>(null);
     const [showFieldsSidebar, setShowFieldsSidebar] = useState(false); // Hidden by default for faster load
@@ -1746,6 +1751,21 @@ export default function EpicDetailPage() {
             : []),
     ];
 
+    // Keeps ?tab= in sync so the current tab is always a shareable/bookmarkable link — e.g.
+    // .../epics/[id]?tab=forecast opens straight into the Forecast tab. replace (not push) so
+    // switching tabs doesn't spam browser back-history with one entry per click.
+    const handleTabChange = (tab: string) => {
+        setActiveTab(tab);
+        const nextParams = new URLSearchParams(searchParams.toString());
+        if (tab === "readiness") {
+            nextParams.delete("tab"); // readiness is the default; keep the URL clean
+        } else {
+            nextParams.set("tab", tab);
+        }
+        const qs = nextParams.toString();
+        router.replace(`/epics/${id}${qs ? `?${qs}` : ""}`, { scroll: false });
+    };
+
     return (
         <div className="flex">
             <div
@@ -2066,7 +2086,7 @@ export default function EpicDetailPage() {
                         <Select
                             data={tabOptions}
                             value={activeTab}
-                            onChange={(value) => setActiveTab(value ?? "readiness")}
+                            onChange={(value) => handleTabChange(value ?? "readiness")}
                             size="sm"
                             style={{ minWidth: 160 }}
                             styles={{ root: { flex: 1, maxWidth: 220 } }}
@@ -2074,7 +2094,7 @@ export default function EpicDetailPage() {
                     ) : (
                         <EpicDetailTabs
                             activeTab={activeTab}
-                            onTabChange={(value) => setActiveTab(value)}
+                            onTabChange={handleTabChange}
                             hasTalkTrackVideo={hasTalkTrackVideo}
                             showRoadmapRewind={showRoadmapRewind}
                             showStoryBrief={showStoryBrief}
