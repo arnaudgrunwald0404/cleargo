@@ -90,7 +90,15 @@ console.log(`[strip-sharp] Done. Processed ${nftFiles.length} trace file(s). Rem
  * Verified 2026-09-11 by running `next start` with all route manifests deleted: route
  * handlers and pages both behave identically.
  */
-const serverAppDir = path.join(nextDir, 'server', 'app');
+// output: 'standalone' means the build produces TWO server/app trees, each with its own full
+// set of manifests — .next/server/app AND .next/standalone/.next/server/app. The Netlify
+// handler is assembled from the standalone tree (proven by the PR #75 second preview, where
+// stripping only the outer tree logged success and the handler still carried all 256 files) —
+// so both trees must be cleaned.
+const serverAppDirs = [
+  path.join(nextDir, 'server', 'app'),
+  path.join(nextDir, 'standalone', '.next', 'server', 'app'),
+];
 let manifestCount = 0;
 let manifestBytes = 0;
 
@@ -107,7 +115,7 @@ function stripRouteManifests(dir) {
     }
   }
 }
-stripRouteManifests(serverAppDir);
+for (const dir of serverAppDirs) stripRouteManifests(dir);
 
 // Also drop any trace entries pointing at the now-deleted files, so nothing downstream
 // trips over a traced-but-missing path.
