@@ -24,6 +24,22 @@ function tierBadgeStyle(tier: string | null): React.CSSProperties {
   return { background: '#f3f4f6', color: '#374151' };
 }
 
+// Kept in sync with ForecastPageContent.tsx's REVIEW_STATUS_LABEL/COLOR — separate files, same
+// four values (draft/ready_for_review/in_review/aligned) defined on forecast_runs.review_status.
+const REVIEW_STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  ready_for_review: 'Ready for Review',
+  in_review: 'In Review',
+  aligned: 'Aligned',
+};
+
+const REVIEW_STATUS_STYLE: Record<string, React.CSSProperties> = {
+  draft: { background: '#f3f4f6', color: '#374151' },
+  ready_for_review: { background: '#dbeafe', color: '#1e40af' },
+  in_review: { background: '#fef3c7', color: '#92400e' },
+  aligned: { background: '#dcfce7', color: '#166534' },
+};
+
 export default function ForecastsPage() {
   const [epics, setEpics] = useState<ForecastEpicSummary[]>([]);
   const [order, setOrder] = useState<string[]>([]); // epic_aha_id order; empty = default
@@ -32,6 +48,7 @@ export default function ForecastsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [scenario, setScenario] = useState<string>('all');
   const [gtmModuleFilter, setGtmModuleFilter] = useState<string>('all');
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedLinkId, setExpandedLinkId] = useState<string | null>(null);
   const [renamingLinkId, setRenamingLinkId] = useState<string | null>(null);
@@ -98,9 +115,10 @@ export default function ForecastsPage() {
 
   // Applied on top of drag order, not instead of it — filtering doesn't change saved row order.
   const filteredEpics = useMemo(() => {
-    if (gtmModuleFilter === 'all') return orderedEpics;
-    return orderedEpics.filter(e => e.gtm_module === gtmModuleFilter);
-  }, [orderedEpics, gtmModuleFilter]);
+    return orderedEpics
+      .filter(e => gtmModuleFilter === 'all' || e.gtm_module === gtmModuleFilter)
+      .filter(e => reviewStatusFilter === 'all' || e.review_status === reviewStatusFilter);
+  }, [orderedEpics, gtmModuleFilter, reviewStatusFilter]);
 
   const selectedEpics = filteredEpics.filter(e => selected.has(e.epic_aha_id));
 
@@ -270,6 +288,16 @@ export default function ForecastsPage() {
               styles={{ input: { fontFamily: 'var(--font-body)' } }}
             />
 
+            {/* Forecast status filter */}
+            <Select
+              data={[{ value: 'all', label: 'All Statuses' }, ...Object.entries(REVIEW_STATUS_LABEL).map(([value, label]) => ({ value, label }))]}
+              value={reviewStatusFilter}
+              onChange={v => setReviewStatusFilter(v ?? 'all')}
+              size="sm"
+              style={{ minWidth: 170 }}
+              styles={{ input: { fontFamily: 'var(--font-body)' } }}
+            />
+
             {/* Scenario filter */}
             <SegmentedControl
               value={scenario}
@@ -359,7 +387,7 @@ export default function ForecastsPage() {
             {/* Table header */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '24px 40px 120px 1fr 90px 110px 105px 105px 120px 120px 110px 80px',
+              gridTemplateColumns: '24px 40px 120px 1fr 90px 110px 130px 105px 105px 120px 120px 110px 80px',
               padding: '10px 16px',
               borderBottom: '1px solid var(--color-border, #e5e7eb)',
               background: 'var(--color-surface, #f9fafb)',
@@ -385,6 +413,7 @@ export default function ForecastsPage() {
               <div>Epic</div>
               <div>Tier</div>
               <div>Release</div>
+              <div>Status</div>
               <div>Incr. 2027</div>
               <div>Incr. 2028</div>
               <div>Churn Red. 2027</div>
@@ -408,7 +437,7 @@ export default function ForecastsPage() {
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '24px 40px 120px 1fr 90px 110px 105px 105px 120px 120px 110px 80px',
+                      gridTemplateColumns: '24px 40px 120px 1fr 90px 110px 130px 105px 105px 120px 120px 110px 80px',
                       padding: '12px 16px',
                       borderBottom: idx < filteredEpics.length - 1 || isExpanded
                         ? '1px solid var(--color-border, #e5e7eb)'
@@ -480,6 +509,21 @@ export default function ForecastsPage() {
 
                     <div style={{ fontSize: 12, color: 'var(--color-text-secondary, #6b7280)' }}>
                       {epic.release ?? <span style={{ color: '#d1d5db' }}>—</span>}
+                    </div>
+
+                    <div>
+                      {epic.review_status ? (
+                        <span style={{
+                          ...REVIEW_STATUS_STYLE[epic.review_status],
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {REVIEW_STATUS_LABEL[epic.review_status] ?? epic.review_status}
+                        </span>
+                      ) : <span style={{ color: '#d1d5db' }}>—</span>}
                     </div>
 
                     <div style={{ fontSize: 15, fontWeight: 700, color: activeLink?.arr_incremental_2027_usd != null ? '#111827' : '#d1d5db' }}>

@@ -14,12 +14,13 @@ import {
   Stack,
   Table,
   Text,
+  Textarea,
   TextInput,
   Title,
   Anchor,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconChartLine, IconPencil, IconDeviceFloppy, IconX, IconSparkles, IconChevronDown, IconChevronRight } from '@tabler/icons-react';
+import { IconChartLine, IconPencil, IconDeviceFloppy, IconX, IconSparkles, IconChevronDown, IconChevronRight, IconMessageCircle } from '@tabler/icons-react';
 import { PurpleLoader } from '../PurpleLoader';
 import { MarkdownLite } from '@/components/MarkdownLite';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
@@ -30,15 +31,25 @@ interface ForecastPageContentProps {
 
 type Scenario = 'bear' | 'base' | 'bull';
 type Confidence = 'confirmed' | 'hypothesis' | 'low_confidence';
+type ReviewStatus = 'draft' | 'ready_for_review' | 'in_review' | 'aligned';
 
 interface ForecastRun {
   id: string;
   epic_aha_id: string;
   source: 'migrated_from_chrysalis' | 'generated';
   status: string;
+  review_status: ReviewStatus;
   is_current: boolean;
   created_at: string;
   created_by: string | null;
+}
+
+interface ForecastComment {
+  id: string;
+  epic_aha_id: string;
+  comment_text: string;
+  created_by: string;
+  created_at: string;
 }
 
 interface ForecastAssumption {
@@ -107,6 +118,25 @@ const CONFIDENCE_COLOR: Record<Confidence, string> = {
 const CONFIDENCE_OPTIONS = (Object.keys(CONFIDENCE_LABEL) as Confidence[]).map((value) => ({
   value,
   label: CONFIDENCE_LABEL[value],
+}));
+
+const REVIEW_STATUS_LABEL: Record<ReviewStatus, string> = {
+  draft: 'Draft',
+  ready_for_review: 'Ready for Review',
+  in_review: 'In Review',
+  aligned: 'Aligned',
+};
+
+const REVIEW_STATUS_COLOR: Record<ReviewStatus, string> = {
+  draft: 'gray',
+  ready_for_review: 'blue',
+  in_review: 'yellow',
+  aligned: 'green',
+};
+
+const REVIEW_STATUS_OPTIONS = (Object.keys(REVIEW_STATUS_LABEL) as ReviewStatus[]).map((value) => ({
+  value,
+  label: REVIEW_STATUS_LABEL[value],
 }));
 
 const NARRATIVE_TITLE: Record<NarrativeSection, string> = {
@@ -220,6 +250,13 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
   const [generating, setGenerating] = useState(false);
   const [generationJobId, setGenerationJobId] = useState<string | null>(null);
 
+  const [statusSaving, setStatusSaving] = useState(false);
+
+  const [comments, setComments] = useState<ForecastComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+
   useEffect(() => {
     if (!generationJobId) return;
     const start = Date.now();
@@ -313,6 +350,63 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
     }
   };
 
+  const fetchComments = async () => {
+    setCommentsLoading(true);
+    try {
+      const res = await fetchWithRateLimit(`/api/forecasts/${encodeURIComponent(epicAhaId)}/comments`, { maxRetries: 1 });
+      if (!res.ok) return;
+      const json = (await res.json()) as { comments: ForecastComment[] };
+      setComments(json.comments ?? []);
+    } catch {
+      // Comments are a nice-to-have; failing silently keeps the main forecast usable.
+    } finally {
+      setCommentsLoading(false);
+    }
+  };
+
+  const submitComment = async () => {
+    const text = commentText.trim();
+    if (!text) return;
+    setCommentSubmitting(true);
+    try {
+      const res = await fetchWithRateLimit(`/api/forecasts/${encodeURIComponent(epicAhaId)}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment_text: text }),
+        maxRetries: 1,
+      });
+      if (!res.ok) throw new Error(`Failed to post comment (${res.status})`);
+      const { comment } = (await res.json()) as { comment: ForecastComment };
+      setComments((prev) => [...prev, comment]);
+      setCommentText('');
+    } catch (err) {
+      notifications.show({ color: 'red', message: err instanceof Error ? err.message : 'Failed to post comment' });
+    } finally {
+      setCommentSubmitting(false);
+    }
+  };
+
+  const updateReviewStatus = async (newStatus: ReviewStatus) => {
+    if (!data?.run) return;
+    const prevStatus = data.run.review_status;
+    setData((prev) => (prev?.run ? { ...prev, run: { ...prev.run, review_status: newStatus } } : prev));
+    setStatusSaving(true);
+    try {
+      const res = await fetchWithRateLimit(`/api/forecasts/${encodeURIComponent(epicAhaId)}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ review_status: newStatus }),
+        maxRetries: 1,
+      });
+      if (!res.ok) throw new Error(`Failed to update status (${res.status})`);
+    } catch (err) {
+      setData((prev) => (prev?.run ? { ...prev, run: { ...prev.run, review_status: prevStatus } } : prev));
+      notifications.show({ color: 'red', message: err instanceof Error ? err.message : 'Failed to update status' });
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   // Loads a just-completed run, retrying once after a short delay if the read doesn't show it
@@ -331,6 +425,7 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
     if (!epicAhaId) return;
     fetchForecast(null);
     fetchVersions();
+    fetchComments();
 
     // The Forecast tab is conditionally rendered by its parent (mounted only while active), so
     // switching tabs away and back — or a plain reload — mid-generation drops any in-flight
@@ -766,6 +861,15 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
             <Badge color="blue" variant="light">Migrated from Chrysalis repo</Badge>
           )}
           {isViewingHistorical && <Badge color="orange" variant="light">Viewing historical version</Badge>}
+          <Select
+            size="xs"
+            w={170}
+            data={REVIEW_STATUS_OPTIONS}
+            value={run.review_status}
+            onChange={(v) => v && updateReviewStatus(v as ReviewStatus)}
+            disabled={isViewingHistorical || statusSaving}
+            styles={{ input: { fontWeight: 600, color: `var(--mantine-color-${REVIEW_STATUS_COLOR[run.review_status]}-7)` } }}
+          />
           <Text size="xs" c="dimmed">
             {new Date(run.created_at).toLocaleDateString()}
             {run.created_by ? ` · ${run.created_by}` : ''}
@@ -924,6 +1028,42 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
           </Text>
         </Paper>
       )}
+
+      <Paper withBorder p="md">
+        <Group gap={6} mb="sm">
+          <IconMessageCircle size={16} />
+          <Title order={5}>Comments</Title>
+        </Group>
+        <Stack gap="sm">
+          {commentsLoading && comments.length === 0 ? (
+            <Text size="sm" c="dimmed">Loading comments…</Text>
+          ) : comments.length === 0 ? (
+            <Text size="sm" c="dimmed">No comments yet. Be the first to leave a note on this forecast.</Text>
+          ) : (
+            comments.map((c) => (
+              <div key={c.id} style={{ borderLeft: '2px solid var(--color-border, #e5e7eb)', paddingLeft: 10 }}>
+                <Group gap={6}>
+                  <Text size="xs" fw={600}>{c.created_by}</Text>
+                  <Text size="xs" c="dimmed">{new Date(c.created_at).toLocaleString()}</Text>
+                </Group>
+                <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>{c.comment_text}</Text>
+              </div>
+            ))
+          )}
+          <Textarea
+            placeholder="Leave a note or comment on this forecast…"
+            value={commentText}
+            onChange={(e) => setCommentText(e.currentTarget.value)}
+            autosize
+            minRows={2}
+          />
+          <Group justify="flex-end">
+            <Button size="xs" onClick={submitComment} loading={commentSubmitting} disabled={!commentText.trim()}>
+              Post Comment
+            </Button>
+          </Group>
+        </Stack>
+      </Paper>
     </Stack>
   );
 }
